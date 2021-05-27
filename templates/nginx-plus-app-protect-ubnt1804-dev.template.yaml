@@ -1,0 +1,785 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  This template creates the Nginx App Protect ecosystem
+
+Parameters:
+  KeyPairName:
+    Description: Public/private key pairs allow you to securely connect to your instance
+      after it launches
+    Type: AWS::EC2::KeyPair::KeyName
+  NginxNodesDesiredCapacity:
+    Default: '2'
+    Description: The desired capacity for the NGINX Auto Scaling group
+    Type: Number
+  NginxNodesMaxSize:
+    Default: '5'
+    Description: The maximum size of the NGINX Auto Scaling group
+    Type: Number
+  NginxNodesMinSize:
+    Default: '1'
+    Description: The minimum size of the NGINX Auto Scaling group
+    Type: Number
+  NginxInstanceType:
+    Description: Amazon EC2 instance type for the NGINX load balancing instances
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t3.nano
+      - t3.micro
+      - t3.small
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+  PublicSubnetCIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.10.0/24
+Mappings:
+  AWSAMIRegionMap:
+    ap-east-1:
+      UBUNTU1804DEV: ami-02cbed36dd3616a84
+    ap-northeast-1:
+      UBUNTU1804DEV: ami-0ec278cf695de326c
+    ap-northeast-2:
+      UBUNTU1804DEV: ami-0a32800963fa115bb
+    ap-northeast-3:
+      UBUNTU1804DEV: ami-0491c330c1b3e44c9
+    ap-south-1:
+      UBUNTU1804DEV: ami-0139359797b6e3cbb
+    ap-southeast-1:
+      UBUNTU1804DEV: ami-09f7be100fa49db35
+    ap-southeast-2:
+      UBUNTU1804DEV: ami-0def18da152bd01ef
+    ca-central-1:
+      UBUNTU1804DEV: ami-0c6eed9d2e970780a
+    eu-central-1:
+      UBUNTU1804DEV: ami-0e1d0cb0c1de0aaed
+    eu-west-1:
+      UBUNTU1804DEV: ami-0c3748a507e3e6af6
+    eu-west-2:
+      UBUNTU1804DEV: ami-0525f8e90a9ea0713
+    eu-west-3:
+      UBUNTU1804DEV: ami-0c60f7962a6f712ed
+    eu-north-1:
+      UBUNTU1804DEV: ami-09ff9e4279f34d409
+    sa-east-1:
+      UBUNTU1804DEV: ami-00eef560ede5acabe
+    us-east-1:
+      UBUNTU1804DEV: ami-0f58d396d72867d57
+    us-east-2:
+      UBUNTU1804DEV: ami-0b912107985ac7145
+    us-west-1:
+      UBUNTU1804DEV: ami-02f5b222247cd8471
+    us-west-2:
+      UBUNTU1804DEV: ami-0ead4783e8d139c88
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+
+  NginxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enables access to the Nginx
+      VpcId: !Ref 'VPC'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+        # TODO: Restrict access to SSH
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: '0.0.0.0/0'
+  ElbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enables access to the Nginx
+      VpcId: !Ref 'VPC'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+
+  NginxLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - 01_setupCfnHup
+            - 02_config-amazon-cloudwatch-agent
+            - 03_restart_amazon-cloudwatch-agent
+          UpdateEnvironment:
+            - 02_config-amazon-cloudwatch-agent
+            - 03_restart_amazon-cloudwatch-agent
+        02_config-amazon-cloudwatch-agent:
+          files:
+            '/opt/aws/amazon-cloudwatch-agent/bin/nginx-cloudwatch-agent-config.json':
+              mode: '000400'
+              owner: root
+              group: root
+              content: !Sub |
+                {
+                  "metrics": {
+                    "append_dimensions": {
+                      "AutoScalingGroupName": "${!aws:AutoScalingGroupName}",
+                      "ImageId": "${!aws:ImageId}",
+                      "InstanceId": "${!aws:InstanceId}",
+                      "InstanceType": "${!aws:InstanceType}"
+                    },
+                    "metrics_collected": {
+                      "mem": {
+                        "measurement": [
+                          "mem_used_percent"
+                        ]
+                      },
+                      "swap": {
+                        "measurement": [
+                          "swap_used_percent"
+                        ]
+                      }
+                    }
+                  },
+                  "logs": {
+                    "logs_collected": {
+                      "files": {
+                        "collect_list": [
+                          {
+                            "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
+                            "log_group_name": "${WebServerLogGroup}",
+                            "log_stream_name": "{instance_id}/amazon-cloudwatch-agent.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/nginx/access.log",
+                            "log_group_name": "${WebServerLogGroup}",
+                            "log_stream_name": "{instance_id}/nginx_access.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/nginx/error.log",
+                            "log_group_name": "${WebServerLogGroup}",
+                            "log_stream_name": "{instance_id}/nginx_error.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/syslog",
+                            "log_group_name": "${WebServerLogGroup}",
+                            "log_stream_name": "{instance_id}/syslog",
+                            "timezone": "Local"
+                          }
+                        ]
+                      }
+                    },
+                    "log_stream_name": "${WebServerLogGroup}",
+                    "force_flush_interval" : 15
+                  }
+                }
+        03_restart_amazon-cloudwatch-agent:
+          commands:
+            01_stop_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop
+            02_start_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/nginx-cloudwatch-agent-config.json -s
+        01_setupCfnHup:
+          files:
+            '/etc/cfn/cfn-hup.conf':
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+              mode: '000400'
+              owner: root
+              group: root
+            '/etc/cfn/hooks.d/amazon-cloudwatch-agent-auto-reloader.conf':
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.NginxLaunchConfiguration.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource NginxLaunchConfiguration --region ${AWS::Region} --configsets UpdateEnvironment
+                runas=root
+              mode: '000400'
+              owner: root
+              group: root
+            "/lib/systemd/system/cfn-hup.service":
+              content: !Sub |
+                [Unit]
+                Description=cfn-hup daemon
+                [Service]
+                Type=simple
+                ExecStart=/opt/aws/bin/cfn-hup
+                Restart=always
+                [Install]
+                WantedBy=multi-user.target
+          commands:
+            01enable_cfn_hup:
+              command: !Sub |
+                systemctl enable cfn-hup.service
+            02start_cfn_hup:
+              command: !Sub |
+                systemctl start cfn-hup.service
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref 'AWS::Region'
+        - UBUNTU1804DEV
+      InstanceType: !Ref 'NginxInstanceType'
+      KeyName: !Ref 'KeyPairName'
+      IamInstanceProfile: !Ref 'NginxInstanceProfile'
+      SecurityGroups:
+        - !Ref 'NginxSecurityGroup'
+      UserData:
+        "Fn::Base64":
+          !Sub |
+            #!/bin/bash
+            sudo apt-get update -y
+            # Install cloudformation agent
+            apt-get install -y python-pip
+            apt-get install -y python-setuptools
+            mkdir -p /opt/aws/bin
+            python /usr/lib/python2.7/dist-packages/easy_install.py --script-dir /opt/aws/bin https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+
+            # Install cloudwatch agent
+            wget https://s3.amazonaws.com/amazoncloudwatch-agent/debian/amd64/latest/amazon-cloudwatch-agent.deb
+            sudo dpkg -i -E ./amazon-cloudwatch-agent.deb
+
+            # Start cfn-init
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource NginxLaunchConfiguration --configsets default --region ${AWS::Region}
+
+            # Install CodeDeploy Agent
+            sudo apt install ruby -y
+            wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install
+            chmod +x ./install
+            sudo ./install auto
+
+            # All done so signal success
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NginxAutoScalingGroup --region ${AWS::Region}
+
+  WebServerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+
+  NginxAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      Cooldown: '300'
+      MaxSize: !Ref 'NginxNodesMaxSize'
+      MinSize: !Ref 'NginxNodesMinSize'
+      DesiredCapacity: !Ref 'NginxNodesDesiredCapacity'
+      HealthCheckGracePeriod: '300'
+      HealthCheckType: EC2
+      VPCZoneIdentifier:
+        - !Ref 'PublicSubnet'
+      LaunchConfigurationName: !Ref 'NginxLaunchConfiguration'
+      LoadBalancerNames:
+        - !Ref 'NginxELB'
+    CreationPolicy:
+      ResourceSignal:
+        Count: '2'
+        Timeout: PT30M
+
+  NginxELB:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      CrossZone: 'true'
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: '5'
+        UnhealthyThreshold: '3'
+        Interval: '15'
+        Timeout: '5'
+      LoadBalancerName: NginxELB
+      Listeners:
+        - LoadBalancerPort: '80'
+          InstancePort: '80'
+          Protocol: HTTP
+      Subnets:
+        - !Ref 'PublicSubnet'
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref 'ElbSecurityGroup'
+
+  NginxPlusIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join
+        - '-'
+        - - !Ref 'AWS::StackName'
+          - NginxPlusIAMRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: !Join
+            - '-'
+            - - !Ref 'AWS::StackName'
+              - NginxPlusASGPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - ec2:DescribeInstances
+                  - autoscaling:DescribeAutoScalingGroups
+                  - ec2:DescribeTags
+                  - ec2:DescribeVolumes
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'NginxPlusArtifactsBucket'
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'NginxPlusArtifactsBucket'
+                      - /*
+        - PolicyName: !Join
+            - '-'
+            - - !Ref 'AWS::StackName'
+              - NginxPlusCloudWatchPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - 'logs:PutLogEvents'
+                  - 'logs:DescribeLogStreams'
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:CreateLogStream'
+                  - 'logs:CreateLogGroup'
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ':'
+                    - - arn
+                      - aws
+                      - logs
+                      - !Ref 'AWS::Region'
+                      - !Ref 'AWS::AccountId'
+                      - log-group
+                      - !Ref 'WebServerLogGroup'
+                      - '*'
+              - Action:
+                  - 'cloudwatch:PutMetricData'
+                Effect: Allow
+                # TODO: check correct resource
+                Resource: '*'
+
+  NginxInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref 'NginxPlusIAMRole'
+
+  NginxPlusRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Join
+        - '-'
+        - - !Ref 'AWS::StackName'
+          - NginxPlusRepo
+      RepositoryDescription: This is a repository for Nginx Plus configuration.
+      Code:
+        BranchName: master
+        S3:
+          Bucket: nginx-plus-app-protect-cf
+          Key: codecommit-base.zip
+
+  NginxPlusCodeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Join
+        - '-'
+        - - !Ref 'AWS::StackName'
+          - NginxPlusCodeBuild
+      Description: Build nginx config
+      ServiceRole: !GetAtt NginxPlusCodeBuildRole.Arn
+      Artifacts:
+        Location: !Ref 'NginxPlusArtifactsBucket'
+        Name: 'nginx-config.zip'
+        NamespaceType: BUILD_ID
+        Packaging: ZIP
+        Path: 'codebuild'
+        Type: S3
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+      Source:
+        Location: !GetAtt NginxPlusRepo.CloneUrlHttp
+        Type: CODECOMMIT
+      LogsConfig:
+        # TODO: Add cloudwatch or S3 logs
+        CloudWatchLogs:
+          Status: DISABLED
+      TimeoutInMinutes: 10
+
+  NginxPlusCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join
+        - '-'
+        - - !Ref 'AWS::StackName'
+          - NginxPlusCodeBuildRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+        - PolicyName: !Join
+            - '-'
+            - - !Ref 'AWS::StackName'
+              - NginxPlusCodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - s3:List*
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'NginxPlusArtifactsBucket'
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'NginxPlusArtifactsBucket'
+                      - /*
+
+  NginxPlusCodeDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join
+        - '-'
+        - - !Ref 'AWS::StackName'
+          - CodeDeploy
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Join
+            - '-'
+            - - !Ref 'AWS::StackName'
+              - NginxPlusCodeDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - autoscaling:CompleteLifecycleAction
+                  - autoscaling:DeleteLifecycleHook
+                  - autoscaling:PutLifecycleHook
+                  - autoscaling:RecordLifecycleActionHeartbeat
+                Effect: Allow
+                Resource: !Join
+                  - ':'
+                  - - arn
+                    - aws
+                    - autoscaling
+                    - !Ref 'AWS::Region'
+                    - !Ref 'AWS::AccountId'
+                    - autoScalingGroup
+                    - '*'
+                    # TODO: now working on stack create
+                    # - !Join
+                    #   - '/'
+                    #   - - autoScalingGroupName
+                    #     - !Ref 'NginxAutoScalingGroup'
+              - Action:
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:DescribeLifecycleHooks
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  # TODO: check resource permissions
+                  - elasticloadbalancing:DescribeInstanceHealth
+                  - elasticloadbalancing:RegisterInstancesWithLoadBalancer
+                  - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
+                Effect: Allow
+                Resource: "*"
+
+  NginxPlusCodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Join
+            - '-'
+            - - !Ref 'AWS::StackName'
+              - NginxPlusCodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ':'
+                    - - arn
+                      - aws
+                      - codecommit
+                      - !Ref 'AWS::Region'
+                      - !Ref 'AWS::AccountId'
+                      - !GetAtt NginxPlusRepo.Name
+              - Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StopBuild
+                Effect: Allow
+                Resource:
+                  - !GetAtt 'NginxPlusCodeBuild.Arn'
+              - Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplicationRevision
+                  - codedeploy:GetDeployment
+                  - codedeploy:GetDeploymentConfig
+                  - codedeploy:RegisterApplicationRevision
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ':'
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref 'AWS::Region'
+                      - !Ref 'AWS::AccountId'
+                      - deploymentgroup
+                      - !Join
+                        - '/'
+                        - - !Ref 'NginxPlusCodeDeployApp'
+                          - !Ref 'NginxPlusDeploymentGroup'
+                  - !Join
+                    - ':'
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref 'AWS::Region'
+                      - !Ref 'AWS::AccountId'
+                      - application
+                      - !Ref 'NginxPlusCodeDeployApp'
+                  - !Join
+                    - ':'
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref 'AWS::Region'
+                      - !Ref 'AWS::AccountId'
+                      - deploymentconfig
+                      - '*'
+              - Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'NginxPlusArtifactsBucket'
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'NginxPlusArtifactsBucket'
+                      - /*
+
+  NginxPlusArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Description: Creating Amazon S3 bucket for AWS CodePipeline and CodeBuild artifacts
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - !Ref 'AWS::StackName'
+              - NginxPlusArtifactsBucket
+      VersioningConfiguration:
+        Status: Enabled
+
+  NginxPlusCodeDeployApp:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: NginxPlusCodeDeployApp
+      ComputePlatform: Server
+
+  NginxPlusDeploymentConfig:
+    Type: AWS::CodeDeploy::DeploymentConfig
+    Properties:
+      MinimumHealthyHosts:
+        Type: FLEET_PERCENT
+        Value: '50'
+
+  NginxPlusDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      # TODO: alarms
+      #AlarmConfiguration:
+        #Alarms:
+        #  - Name: !Ref myAlarm
+      ApplicationName: !Ref NginxPlusCodeDeployApp
+      DeploymentConfigName: !Ref NginxPlusDeploymentConfig
+      DeploymentGroupName: NginxPlusDeploymentGroup
+      LoadBalancerInfo:
+        ElbInfoList:
+          - Name: !Ref NginxELB
+      DeploymentStyle:
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      ServiceRoleArn: !GetAtt NginxPlusCodeDeployRole.Arn
+      AutoScalingGroups:
+        - !Ref NginxAutoScalingGroup
+
+  NginxPlusCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt NginxPlusCodePipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !GetAtt NginxPlusRepo.Name
+                BranchName: master
+                PollForSourceChanges: true
+              InputArtifacts: []
+              OutputArtifacts:
+                - Name: !Join
+                    - '-'
+                    - - !Ref 'AWS::StackName'
+                      - SourceArtifact
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref NginxPlusCodeBuild
+              InputArtifacts:
+                - Name: !Join
+                    - '-'
+                    - - !Ref 'AWS::StackName'
+                      - SourceArtifact
+              OutputArtifacts:
+                - Name: !Join
+                    - '-'
+                    - - !Ref 'AWS::StackName'
+                      - BuildArtifact
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: DeployAction
+              InputArtifacts:
+                - Name: !Join
+                    - '-'
+                    - - !Ref 'AWS::StackName'
+                      - BuildArtifact
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CodeDeploy
+              Configuration:
+                ApplicationName: !Ref NginxPlusCodeDeployApp
+                DeploymentGroupName: !Ref NginxPlusDeploymentGroup
+              RunOrder: 1
+      ArtifactStore:
+        Type: S3
+        Location: !Ref NginxPlusArtifactsBucket
