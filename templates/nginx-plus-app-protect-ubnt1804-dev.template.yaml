@@ -18,6 +18,21 @@ Metadata:
           - NginxNodesMaxSize
           - NginxNodesDesiredCapacity
           - KeyPairName
+    ParameterLabels:
+      VpcCIDR:
+        default: "VPC CIDR"
+      PublicSubnetCIDR:
+        default: "Public Subnet CIDR"
+      NginxInstanceType:
+        default: "Dataplane VM Instance Type"
+      NginxNodesMinSize:
+        default: "Minimum dataplane nodes count"
+      NginxNodesMaxSize:
+        default: "Maximum dataplane nodes count"
+      NginxNodesDesiredCapacity:
+        default: "Desired dataplane nodes count"
+      KeyPairName:
+        default: "SSH Key Pair Name"
 Parameters:
   KeyPairName:
     Description: SSH key pair for dataplane VMs
