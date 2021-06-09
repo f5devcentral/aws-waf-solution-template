@@ -675,7 +675,6 @@ Resources:
   NginxPlusArtifactsBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Delete
-    Description: Creating Amazon S3 bucket for AWS CodePipeline and CodeBuild artifacts
     Properties:
       Tags:
         - Key: Name
@@ -697,7 +696,7 @@ Resources:
     Properties:
       MinimumHealthyHosts:
         Type: FLEET_PERCENT
-        Value: "50"
+        Value: 50
 
   NginxPlusDeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
@@ -729,7 +728,7 @@ Resources:
               ActionTypeId:
                 Category: Source
                 Owner: AWS
-                Version: 1
+                Version: "1"
                 Provider: CodeCommit
               Configuration:
                 RepositoryName: !GetAtt NginxPlusRepo.Name
@@ -748,7 +747,7 @@ Resources:
               ActionTypeId:
                 Category: Build
                 Owner: AWS
-                Version: 1
+                Version: "1"
                 Provider: CodeBuild
               Configuration:
                 ProjectName: !Ref NginxPlusCodeBuild
@@ -774,7 +773,7 @@ Resources:
               ActionTypeId:
                 Category: Deploy
                 Owner: AWS
-                Version: 1
+                Version: "1"
                 Provider: CodeDeploy
               Configuration:
                 ApplicationName: !Ref NginxPlusCodeDeployApp
