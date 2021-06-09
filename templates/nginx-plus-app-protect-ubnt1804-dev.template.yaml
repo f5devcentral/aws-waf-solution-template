@@ -1,12 +1,26 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  This template creates the Nginx App Protect ecosystem
-
+  This community template deploys complete WAF solution based on NGINX App Protect. Refer to solution's github for guidance.
+Metadata:
+  License: Apache-2.0
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "VPC Configuration"
+        Parameters:
+          - VpcCIDR
+          - PublicSubnetCIDR
+      - Label:
+          default: "Dataplane Configuration"
+        Parameters:
+          - NginxInstanceType
+          - NginxNodesMinSize
+          - NginxNodesMaxSize
+          - NginxNodesDesiredCapacity
+          - KeyPairName
 Parameters:
   KeyPairName:
-    Description:
-      Public/private key pairs allow you to securely connect to your instance
-      after it launches
+    Description: SSH key pair for dataplane VMs
     Type: AWS::EC2::KeyPair::KeyName
   NginxNodesDesiredCapacity:
     Default: "2"
@@ -21,7 +35,7 @@ Parameters:
     Description: The minimum size of the NGINX Auto Scaling group
     Type: Number
   NginxInstanceType:
-    Description: Amazon EC2 instance type for the NGINX load balancing instances
+    Description: Amazon EC2 instance type for the NGINX instances
     Type: String
     Default: t3.small
     AllowedValues:
@@ -30,11 +44,11 @@ Parameters:
       - t3.large
       - t3.xlarge
   VpcCIDR:
-    Description: Please enter the IP range (CIDR notation) for this VPC
+    Description: VPC CIDR block
     Type: String
     Default: 10.192.0.0/16
   PublicSubnetCIDR:
-    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Description: Public subnet CIDR block
     Type: String
     Default: 10.192.10.0/24
 Mappings:
@@ -82,16 +96,13 @@ Resources:
       CidrBlock: !Ref VpcCIDR
       EnableDnsSupport: true
       EnableDnsHostnames: true
-
   InternetGateway:
     Type: AWS::EC2::InternetGateway
-
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
-
   PublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
@@ -99,12 +110,10 @@ Resources:
       AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Ref PublicSubnetCIDR
       MapPublicIpOnLaunch: true
-
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
-
   DefaultPublicRoute:
     Type: AWS::EC2::Route
     DependsOn: InternetGatewayAttachment
@@ -118,7 +127,6 @@ Resources:
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet
-
   NginxSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -144,7 +152,6 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: "0.0.0.0/0"
-
   NginxLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
@@ -299,12 +306,10 @@ Resources:
 
           # All done so signal success
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NginxAutoScalingGroup --region ${AWS::Region}
-
   WebServerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       RetentionInDays: 7
-
   NginxAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
@@ -323,7 +328,6 @@ Resources:
       ResourceSignal:
         Count: "2"
         Timeout: PT30M
-
   NginxELB:
     Type: AWS::ElasticLoadBalancing::LoadBalancer
     Properties:
@@ -344,7 +348,6 @@ Resources:
       Scheme: internet-facing
       SecurityGroups:
         - !Ref "ElbSecurityGroup"
-
   NginxPlusIAMRole:
     Type: AWS::IAM::Role
     Properties:
@@ -421,14 +424,12 @@ Resources:
                 Effect: Allow
                 # TODO: check correct resource
                 Resource: "*"
-
   NginxInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Path: /
       Roles:
         - !Ref "NginxPlusIAMRole"
-
   NginxPlusRepo:
     Type: AWS::CodeCommit::Repository
     Properties:
@@ -442,7 +443,6 @@ Resources:
         S3:
           Bucket: nginx-plus-app-protect-cf
           Key: codecommit-base.zip
-
   NginxPlusCodeBuild:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -471,7 +471,6 @@ Resources:
         CloudWatchLogs:
           Status: DISABLED
       TimeoutInMinutes: 10
-
   NginxPlusCodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
@@ -514,7 +513,6 @@ Resources:
                     - - "arn:aws:s3:::"
                       - !Ref "NginxPlusArtifactsBucket"
                       - /*
-
   NginxPlusCodeDeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -571,7 +569,6 @@ Resources:
                   - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
                 Effect: Allow
                 Resource: "*"
-
   NginxPlusCodePipelineRole:
     Type: AWS::IAM::Role
     Properties:
@@ -669,7 +666,6 @@ Resources:
                     - - "arn:aws:s3:::"
                       - !Ref "NginxPlusArtifactsBucket"
                       - /*
-
   NginxPlusArtifactsBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Delete
@@ -682,20 +678,17 @@ Resources:
               - NginxPlusArtifactsBucket
       VersioningConfiguration:
         Status: Enabled
-
   NginxPlusCodeDeployApp:
     Type: AWS::CodeDeploy::Application
     Properties:
       ApplicationName: NginxPlusCodeDeployApp
       ComputePlatform: Server
-
   NginxPlusDeploymentConfig:
     Type: AWS::CodeDeploy::DeploymentConfig
     Properties:
       MinimumHealthyHosts:
         Type: FLEET_PERCENT
         Value: 50
-
   NginxPlusDeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Properties:
@@ -714,7 +707,6 @@ Resources:
       ServiceRoleArn: !GetAtt NginxPlusCodeDeployRole.Arn
       AutoScalingGroups:
         - !Ref NginxAutoScalingGroup
-
   NginxPlusCodePipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
