@@ -13,24 +13,22 @@ Parameters:
     Description: The desired capacity for the NGINX Auto Scaling group
     Type: Number
   NginxNodesMaxSize:
-    Default: "5"
+    Default: "6"
     Description: The maximum size of the NGINX Auto Scaling group
     Type: Number
   NginxNodesMinSize:
-    Default: "1"
+    Default: "2"
     Description: The minimum size of the NGINX Auto Scaling group
     Type: Number
   NginxInstanceType:
     Description: Amazon EC2 instance type for the NGINX load balancing instances
     Type: String
-    Default: t3.micro
+    Default: t3.small
     AllowedValues:
-      - t2.nano
-      - t2.micro
-      - t2.small
-      - t3.nano
-      - t3.micro
       - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
   VpcCIDR:
     Description: Please enter the IP range (CIDR notation) for this VPC
     Type: String
