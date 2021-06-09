@@ -128,13 +128,13 @@ Resources:
       VpcId: !Ref "VPC"
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: "80"
-          ToPort: "80"
+          FromPort: 80
+          ToPort: 80
           CidrIp: "0.0.0.0/0"
         # TODO: Restrict access to SSH
         - IpProtocol: tcp
-          FromPort: "22"
-          ToPort: "22"
+          FromPort: 22
+          ToPort: 22
           CidrIp: "0.0.0.0/0"
   ElbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -143,8 +143,8 @@ Resources:
       VpcId: !Ref "VPC"
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: "80"
-          ToPort: "80"
+          FromPort: 80
+          ToPort: 80
           CidrIp: "0.0.0.0/0"
 
   NginxLaunchConfiguration:
@@ -250,7 +250,7 @@ Resources:
               owner: root
               group: root
             "/lib/systemd/system/cfn-hup.service":
-              content: !Sub |
+              content: |
                 [Unit]
                 Description=cfn-hup daemon
                 [Service]
@@ -261,10 +261,10 @@ Resources:
                 WantedBy=multi-user.target
           commands:
             01enable_cfn_hup:
-              command: !Sub |
+              command: |
                 systemctl enable cfn-hup.service
             02start_cfn_hup:
-              command: !Sub |
+              command: |
                 systemctl start cfn-hup.service
     Properties:
       ImageId: !FindInMap
@@ -314,7 +314,7 @@ Resources:
       MaxSize: !Ref "NginxNodesMaxSize"
       MinSize: !Ref "NginxNodesMinSize"
       DesiredCapacity: !Ref "NginxNodesDesiredCapacity"
-      HealthCheckGracePeriod: "300"
+      HealthCheckGracePeriod: 300
       HealthCheckType: EC2
       VPCZoneIdentifier:
         - !Ref "PublicSubnet"
@@ -329,7 +329,7 @@ Resources:
   NginxELB:
     Type: AWS::ElasticLoadBalancing::LoadBalancer
     Properties:
-      CrossZone: "true"
+      CrossZone: true
       HealthCheck:
         Target: HTTP:80/
         HealthyThreshold: "5"
