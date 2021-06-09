@@ -35,7 +35,7 @@ Metadata:
         default: "SSH Key Pair Name"
 Parameters:
   KeyPairName:
-    Description: SSH key pair for dataplane VMs
+    Description: SSH key pair for dataplane VMs. (For developement purposes only. Leave blank otherwise)
     Type: AWS::EC2::KeyPair::KeyName
   NginxNodesDesiredCapacity:
     Default: "2"
