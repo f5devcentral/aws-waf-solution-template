@@ -9,7 +9,10 @@ Metadata:
           default: "VPC Configuration"
         Parameters:
           - VpcCIDR
-          - PublicSubnetCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
       - Label:
           default: "Dataplane Configuration"
         Parameters:
@@ -21,8 +24,14 @@ Metadata:
     ParameterLabels:
       VpcCIDR:
         default: "VPC CIDR"
-      PublicSubnetCIDR:
-        default: "Public Subnet CIDR"
+      PublicSubnet1CIDR:
+        default: "Public subnet 1 CIDR block (1 Availability Zone)"
+      PublicSubnet2CIDR:
+        default: "Public subnet 2 CIDR block (2 Availability Zone)"
+      PrivateSubnet1CIDR:
+        default: "Private subnet 1 CIDR block (1 Availability Zone)"
+      PrivateSubnet2CIDR:
+        default: "Private subnet 2 CIDR block (2 Availability Zone)"
       NginxInstanceType:
         default: "Dataplane VM Instance Type"
       NginxNodesMinSize:
@@ -35,7 +44,7 @@ Metadata:
         default: "SSH Key Pair Name"
 Parameters:
   KeyPairName:
-    Description: SSH key pair for dataplane VMs. (For developement purposes only. Leave blank otherwise)
+    Description: SSH key pair for dataplane VMs. (For developement purposes only)
     Type: AWS::EC2::KeyPair::KeyName
   NginxNodesDesiredCapacity:
     Default: "2"
@@ -62,10 +71,22 @@ Parameters:
     Description: VPC CIDR block
     Type: String
     Default: 10.192.0.0/16
-  PublicSubnetCIDR:
-    Description: Public subnet CIDR block
+  PublicSubnet1CIDR:
+    Description: Public subnet 1 CIDR block (1 Availability Zone)
     Type: String
     Default: 10.192.10.0/24
+  PublicSubnet2CIDR:
+    Description: Public subnet 2 CIDR block (2 Availability Zone)
+    Type: String
+    Default: 10.192.20.0/24
+  PrivateSubnet1CIDR:
+    Description: Private subnet 1 CIDR block (1 Availability Zone)
+    Type: String
+    Default: 10.192.50.0/24
+  PrivateSubnet2CIDR:
+    Description: Private subnet 2 CIDR block (2 Availability Zone)
+    Type: String
+    Default: 10.192.60.0/24
 Mappings:
   AWSAMIRegionMap:
     ap-east-1:
@@ -111,24 +132,47 @@ Resources:
       CidrBlock: !Ref VpcCIDR
       EnableDnsSupport: true
       EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-VPC'
   InternetGateway:
     Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-InternetGateway'
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
-  PublicSubnet:
+  PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !GetAZs ""]
-      CidrBlock: !Ref PublicSubnetCIDR
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
       MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicSubnet(AZ1)'
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicSubnet(AZ2)'
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicRoutes'
   DefaultPublicRoute:
     Type: AWS::EC2::Route
     DependsOn: InternetGatewayAttachment
@@ -136,37 +180,112 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
-
-  PublicSubnetRouteTableAssociation:
+  PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref PublicSubnet
+      SubnetId: !Ref PublicSubnet1
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PrivateRoutes(AZ1)'
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PrivateRoutes(AZ2)'
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PrivateSubnet(AZ1)'
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PrivateSubnet(AZ2)'
   NginxSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Enables access to the Nginx
-      VpcId: !Ref "VPC"
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: "0.0.0.0/0"
-        # TODO: Restrict access to SSH
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: "0.0.0.0/0"
+          CidrIp: !Ref VpcCIDR
   ElbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Enables access to the Nginx
-      VpcId: !Ref "VPC"
+      VpcId: !Ref 'VPC'
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: "0.0.0.0/0"
+          CidrIp: '0.0.0.0/0'
   NginxLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
@@ -334,8 +453,12 @@ Resources:
       DesiredCapacity: !Ref "NginxNodesDesiredCapacity"
       HealthCheckGracePeriod: 300
       HealthCheckType: EC2
+      AvailabilityZones:
+        - !Select [ 0, !GetAZs '' ]
+        - !Select [ 1, !GetAZs '' ]
       VPCZoneIdentifier:
-        - !Ref "PublicSubnet"
+        - !Ref "PrivateSubnet1"
+        - !Ref "PrivateSubnet2"
       LaunchConfigurationName: !Ref "NginxLaunchConfiguration"
       LoadBalancerNames:
         - !Ref "NginxELB"
@@ -359,7 +482,8 @@ Resources:
           InstancePort: "80"
           Protocol: HTTP
       Subnets:
-        - !Ref "PublicSubnet"
+        - !Ref "PublicSubnet1"
+        - !Ref "PublicSubnet2"
       Scheme: internet-facing
       SecurityGroups:
         - !Ref "ElbSecurityGroup"
