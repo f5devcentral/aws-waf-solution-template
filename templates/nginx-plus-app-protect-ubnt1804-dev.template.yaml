@@ -282,25 +282,27 @@ Resources:
       GroupDescription: Enables access to the Nginx
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        - IpProtocol: tcp
+        - Description: Allow HTTP
+          IpProtocol: tcp
           FromPort: 80
-          ToPort: 80
-          CidrIp: !Ref VpcCIDR
-        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+        - Description: Allow HTTP
+          IpProtocol: tcp
+          FromPort: 80
+          CidrIpv6: ::/0
+        - Description: Allow HTTPS
+          IpProtocol: tcp
+          FromPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: Allow HTTPS
+          IpProtocol: tcp
+          FromPort: 443
+          CidrIpv6: ::/0
+        - Description: Allow Healthcheck
+          IpProtocol: tcp
           FromPort: 81
           ToPort: 81
           CidrIp: !Ref VpcCIDR      
-  LoadBalancerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: !Sub '${AWS::StackName}-LoadBalancerSecurityGroup'    
-      GroupDescription: Enables access to the Nginx
-      VpcId: !Ref 'VPC'
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: '0.0.0.0/0'
   NginxPlusLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
@@ -485,7 +487,7 @@ Resources:
         - !Ref "PrivateSubnet2"
       LaunchConfigurationName: !Ref "NginxPlusLaunchConfiguration"
       TargetGroupARNs:
-        - !Ref "HttpTargetGroup"
+        - !Ref "AppProtectTargetGroup"
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-NginxAppProtect'
@@ -502,51 +504,33 @@ Resources:
       Subnets: 
         - !Ref PublicSubnet1
         - !Ref PublicSubnet2
-      SecurityGroups:
-        - !Ref LoadBalancerSecurityGroup
+      Type: network
       Tags:
         - Key: Name
-          Value: LoadBalancer
-  LoadBalancerListener:
+          Value:  !Sub '${AWS::StackName}-LoadBalancer'
+  HTTPLoadBalancerListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       LoadBalancerArn: !Ref LoadBalancer
       Port: 80
-      Protocol: HTTP
+      Protocol: TCP
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref HttpTargetGroup
-  HttpTargetGroup:
+          TargetGroupArn: !Ref AppProtectTargetGroup
+  AppProtectTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub '${AWS::StackName}-HttpTargetGroup'
-      HealthCheckIntervalSeconds: 15
-      HealthCheckPath: /
+      Name: !Sub '${AWS::StackName}-AppProtectTargetGroup'
       HealthCheckPort: "81"
-      HealthCheckProtocol: HTTP
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      Matcher:
-        HttpCode: "204"
+      HealthCheckProtocol: TCP
+      HealthyThresholdCount: 3
       VpcId: !Ref VPC
       TargetType: instance
       Port: 80
-      Protocol: HTTP
+      Protocol: TCP
       TargetGroupAttributes:
       - Key: deregistration_delay.timeout_seconds
-        Value: "30"
-  HttpListenerRule:
-    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Properties:
-      Actions:
-      - Type: forward
-        TargetGroupArn: !Ref HttpTargetGroup
-      Conditions:
-      - Field: path-pattern
-        Values:
-        - "/*"
-      ListenerArn: !Ref LoadBalancerListener
-      Priority: 1
+        Value: "20"
   NginxPlusIAMRole:
     Type: AWS::IAM::Role
     Properties:
@@ -868,7 +852,7 @@ Resources:
       DeploymentGroupName: !Sub '${AWS::StackName}-NginxPlusDeploymentGroup'    
       LoadBalancerInfo:
         TargetGroupInfoList:
-          - Name: !GetAtt HttpTargetGroup.TargetGroupName
+          - Name: !GetAtt AppProtectTargetGroup.TargetGroupName
       DeploymentStyle:
         DeploymentOption: WITH_TRAFFIC_CONTROL
       ServiceRoleArn: !GetAtt NginxPlusCodeDeployRole.Arn
