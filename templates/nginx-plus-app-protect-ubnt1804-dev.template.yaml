@@ -40,6 +40,9 @@ Metadata:
       NginxNodesDesiredCapacity:
         default: "Desired dataplane nodes count"
 Parameters:
+  KeyPairName:
+    Description: SSH key pair for dataplane VMs. (For developement purposes only)
+    Type: AWS::EC2::KeyPair::KeyName
   NginxNodesDesiredCapacity:
     Default: "2"
     Description: The desired capacity for the NGINX Auto Scaling group
@@ -283,6 +286,10 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: !Ref VpcCIDR
+        - IpProtocol: tcp
+          FromPort: 81
+          ToPort: 81
+          CidrIp: !Ref VpcCIDR      
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -361,6 +368,12 @@ Resources:
                             "log_group_name": "${NginxPlusLogGroup}",
                             "log_stream_name": "{instance_id}/syslog",
                             "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/app_protect/security.log",
+                            "log_group_name": "${NginxPlusLogGroup}",
+                            "log_stream_name": "{instance_id}/security.log",
+                            "timezone": "Local"
                           }
                         ]
                       }
@@ -419,6 +432,7 @@ Resources:
         - AWSAMIRegionMap
         - !Ref "AWS::Region"
         - UBUNTU1804DEV
+      KeyName: !Ref "KeyPairName"
       InstanceType: !Ref "NginxInstanceType"
       IamInstanceProfile: !Ref "NginxInstanceProfile"
       SecurityGroups:
@@ -447,16 +461,16 @@ Resources:
           sudo ./install auto
 
           # All done so signal success
-          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NginxAutoScalingGroup --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NginxAppProtectASG --region ${AWS::Region}
   NginxPlusLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '${AWS::StackName}-NginxPlusLogGroup'
       RetentionInDays: 7
-  NginxAutoScalingGroup:
+  NginxAppProtectASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties: 
-      AutoScalingGroupName: !Sub '${AWS::StackName}-NginxAutoScalingGroup'
+      AutoScalingGroupName: !Sub '${AWS::StackName}-NginxAppProtectASG'
       Cooldown: "300"
       MaxSize: !Ref "NginxNodesMaxSize"
       MinSize: !Ref "NginxNodesMinSize"
@@ -508,12 +522,12 @@ Resources:
       Name: !Sub '${AWS::StackName}-HttpTargetGroup'
       HealthCheckIntervalSeconds: 15
       HealthCheckPath: /
-      HealthCheckPort: "80"
+      HealthCheckPort: "81"
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       Matcher:
-        HttpCode: "200"
+        HttpCode: "204"
       VpcId: !Ref VPC
       TargetType: instance
       Port: 80
@@ -714,7 +728,7 @@ Resources:
                     # - !Join
                     #   - '/'
                     #   - - autoScalingGroupName
-                    #     - !Ref 'NginxAutoScalingGroup'
+                    #     - !Ref 'NginxAppProtectASG'
               - Action:
                   - ec2:DescribeInstances
                   - ec2:DescribeInstanceStatus
@@ -859,7 +873,7 @@ Resources:
         DeploymentOption: WITH_TRAFFIC_CONTROL
       ServiceRoleArn: !GetAtt NginxPlusCodeDeployRole.Arn
       AutoScalingGroups:
-        - !Ref NginxAutoScalingGroup
+        - !Ref NginxAppProtectASG
   NginxPlusCodePipeline:
     Type: AWS::CodePipeline::Pipeline
     DependsOn:
