@@ -285,18 +285,22 @@ Resources:
         - Description: Allow HTTP
           IpProtocol: tcp
           FromPort: 80
+          ToPort: 80
           CidrIp: 0.0.0.0/0
         - Description: Allow HTTP
           IpProtocol: tcp
           FromPort: 80
+          ToPort: 80
           CidrIpv6: ::/0
         - Description: Allow HTTPS
           IpProtocol: tcp
           FromPort: 443
+          ToPort: 443
           CidrIp: 0.0.0.0/0
         - Description: Allow HTTPS
           IpProtocol: tcp
           FromPort: 443
+          ToPort: 443
           CidrIpv6: ::/0
         - Description: Allow Healthcheck
           IpProtocol: tcp
@@ -339,6 +343,17 @@ Resources:
                       "swap": {
                         "measurement": [
                           "swap_used_percent"
+                        ]
+                      },
+                      "disk": {
+                        "measurement": [
+                          "disk_used_percent"
+                        ]
+                      },
+                      "net": {
+                        "measurement": [
+                          "net_bytes_recv",
+                          "net_bytes_sent"
                         ]
                       }
                     }
@@ -488,6 +503,11 @@ Resources:
       LaunchConfigurationName: !Ref "NginxPlusLaunchConfiguration"
       TargetGroupARNs:
         - !Ref "AppProtectTargetGroup"
+      MetricsCollection:
+        - Granularity: 1Minute
+          Metrics:
+            - GroupInServiceInstances
+            - GroupTotalInstances
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-NginxAppProtect'
@@ -926,3 +946,8 @@ Resources:
       ArtifactStore:
         Type: S3
         Location: !Ref NginxPlusArtifactsBucket
+  AppProtectDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${AWS::StackName}-AppProtectDashboard'
+      DashboardBody: !Sub '{"widgets":[{"height":6,"width":15,"y":0,"x":3,"type":"log","properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"request_status=\\\"alerted\\\"\" as alerted_requests\n| parse @message \"request_status=\\\"blocked\\\"\" as blocked_requests\n| parse @message \"request_status=\\\"passed\\\"\" as passed_requests\n| sort @timestamp desc\n| stats count(alerted_requests) as alerted, count(blocked_requests) as blocked, count(passed_requests) as passed by bin(5m)","region":"${AWS::Region}","stacked":true,"view":"timeSeries","title":"AppProtect Requests"}},{"height":6,"width":6,"y":0,"x":18,"type":"log","properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message /request_status=\"(?<request_status>.*?)\"/\n| sort @timestamp desc\n| stats count(*) as requests by request_status","region":"${AWS::Region}","stacked":false,"view":"pie","title":"Total Requests"}},{"height":6,"width":6,"y":6,"x":0,"type":"metric","properties":{"view":"timeSeries","stacked":true,"metrics":[["AWS/EC2","CPUUtilization","AutoScalingGroupName","${NginxAppProtectASG}"]],"region":"${AWS::Region}"}},{"height":6,"width":6,"y":6,"x":6,"type":"metric","properties":{"view":"timeSeries","stacked":true,"metrics":[["AWS/EC2","NetworkIn","AutoScalingGroupName","${NginxAppProtectASG}"],[".","NetworkOut",".","."]],"region":"${AWS::Region}"}},{"height":12,"width":24,"y":12,"x":0,"type":"log","properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /attack_type=\\\"(?<attack_type>.*?)\\\",(?<part1>.*?),ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",(?<part3>.*?),sub_violations=\\\"(?<sub_violations>.*?)\\\",support_id=\\\"(?<support_id>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| display @timestamp, request_status, attack_type, ip_client, sub_violations, support_id\n| sort @timestamp desc\n| limit 20","region":"${AWS::Region}","stacked":false,"view":"table","title":"Alerts Log"}},{"height":3,"width":3,"y":0,"x":0,"type":"metric","properties":{"view":"singleValue","metrics":[["AWS/AutoScaling","GroupTotalInstances","AutoScalingGroupName","${NginxAppProtectASG}"]],"region":"${AWS::Region}","title":"Total Instances"}},{"height":3,"width":3,"y":3,"x":0,"type":"metric","properties":{"view":"singleValue","metrics":[["AWS/NetworkELB","HealthyHostCount","TargetGroup","${AppProtectTargetGroup.TargetGroupFullName}","LoadBalancer","${LoadBalancer.LoadBalancerFullName}"]],"region":"${AWS::Region}","title":"Healthy Instances"}},{"type":"log","x":12,"y":6,"width":6,"height":6,"properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"response_code=\\\"*\\\"\" as response_code\n| filter response_code > 0\n| stats count(response_code) as code by response_code","region":"${AWS::Region}","stacked":false,"title":"Response Codes","view":"bar"}},{"type":"log","x":18,"y":6,"width":6,"height":6,"properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| stats count(ip_client) as count by ip_client as ip\n| sort count desc\n| limit 10","region":"${AWS::Region}","stacked":false,"title":"Top Attackers","view":"table"}}]}'
