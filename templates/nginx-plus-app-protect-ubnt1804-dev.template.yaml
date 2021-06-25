@@ -275,11 +275,11 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-PrivateSubnet(AZ2)'
-  NginxPlusSecurityGroup:
+  NginxAppProtectSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub '${AWS::StackName}-NginxPlusSecurityGroup'
-      GroupDescription: Enables access to the Nginx
+      GroupName: !Sub '${AWS::StackName}-NginxAppProtectSecurityGroup'
+      GroupDescription: Enables access to the Nginx App Protect
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - Description: Allow HTTP
@@ -307,7 +307,7 @@ Resources:
           FromPort: 81
           ToPort: 81
           CidrIp: !Ref VpcCIDR      
-  NginxPlusLaunchConfiguration:
+  NginxAppProtectLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
       AWS::CloudFormation::Init:
@@ -364,38 +364,38 @@ Resources:
                         "collect_list": [
                           {
                             "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
-                            "log_group_name": "${NginxPlusLogGroup}",
+                            "log_group_name": "${NginxAppProtectLogGroup}",
                             "log_stream_name": "{instance_id}/amazon-cloudwatch-agent.log",
                             "timezone": "Local"
                           },
                           {
                             "file_path": "/var/log/nginx/access.log",
-                            "log_group_name": "${NginxPlusLogGroup}",
+                            "log_group_name": "${NginxAppProtectLogGroup}",
                             "log_stream_name": "{instance_id}/nginx_access.log",
                             "timezone": "Local"
                           },
                           {
                             "file_path": "/var/log/nginx/error.log",
-                            "log_group_name": "${NginxPlusLogGroup}",
+                            "log_group_name": "${NginxAppProtectLogGroup}",
                             "log_stream_name": "{instance_id}/nginx_error.log",
                             "timezone": "Local"
                           },
                           {
                             "file_path": "/var/log/syslog",
-                            "log_group_name": "${NginxPlusLogGroup}",
+                            "log_group_name": "${NginxAppProtectLogGroup}",
                             "log_stream_name": "{instance_id}/syslog",
                             "timezone": "Local"
                           },
                           {
                             "file_path": "/var/log/app_protect/security.log",
-                            "log_group_name": "${NginxPlusLogGroup}",
+                            "log_group_name": "${NginxAppProtectLogGroup}",
                             "log_stream_name": "{instance_id}/security.log",
                             "timezone": "Local"
                           }
                         ]
                       }
                     },
-                    "log_stream_name": "${NginxPlusLogGroup}",
+                    "log_stream_name": "${NginxAppProtectLogGroup}",
                     "force_flush_interval" : 15
                   }
                 }
@@ -420,8 +420,8 @@ Resources:
               content: !Sub |
                 [cfn-auto-reloader-hook]
                 triggers=post.update
-                path=Resources.NginxPlusLaunchConfiguration.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
-                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource NginxPlusLaunchConfiguration --region ${AWS::Region} --configsets UpdateEnvironment
+                path=Resources.NginxAppProtectLaunchConfig.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource NginxAppProtectLaunchConfig --region ${AWS::Region} --configsets UpdateEnvironment
                 runas=root
               mode: "000400"
               owner: root
@@ -444,16 +444,16 @@ Resources:
               command: |
                 systemctl start cfn-hup.service
     Properties: 
-      LaunchConfigurationName: !Sub '${AWS::StackName}-NginxPlusLaunchConfiguration'
+      LaunchConfigurationName: !Sub '${AWS::StackName}-NginxAppProtectLaunchConfig'
       ImageId: !FindInMap
         - AWSAMIRegionMap
         - !Ref "AWS::Region"
         - UBUNTU1804DEV
       KeyName: !Ref "KeyPairName"
       InstanceType: !Ref "NginxInstanceType"
-      IamInstanceProfile: !Ref "NginxInstanceProfile"
+      IamInstanceProfile: !Ref "NginxAppProtectInstanceProfile"
       SecurityGroups:
-        - !Ref "NginxPlusSecurityGroup"
+        - !Ref "NginxAppProtectSecurityGroup"
       UserData:
         "Fn::Base64": !Sub |
           #!/bin/bash
@@ -469,7 +469,7 @@ Resources:
           sudo dpkg -i -E ./amazon-cloudwatch-agent.deb
 
           # Start cfn-init
-          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource NginxPlusLaunchConfiguration --configsets default --region ${AWS::Region}
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource NginxAppProtectLaunchConfig --configsets default --region ${AWS::Region}
 
           # Install CodeDeploy Agent
           sudo apt install ruby -y
@@ -479,10 +479,10 @@ Resources:
 
           # All done so signal success
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NginxAppProtectASG --region ${AWS::Region}
-  NginxPlusLogGroup:
+  NginxAppProtectLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '${AWS::StackName}-NginxPlusLogGroup'
+      LogGroupName: !Sub '${AWS::StackName}-NginxAppProtectLogGroup'
       RetentionInDays: 7
   NginxAppProtectASG:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -500,9 +500,9 @@ Resources:
       VPCZoneIdentifier:
         - !Ref "PrivateSubnet1"
         - !Ref "PrivateSubnet2"
-      LaunchConfigurationName: !Ref "NginxPlusLaunchConfiguration"
+      LaunchConfigurationName: !Ref "NginxAppProtectLaunchConfig"
       TargetGroupARNs:
-        - !Ref "AppProtectTargetGroup"
+        - !Ref "NginxAppProtectTargetGroup"
       MetricsCollection:
         - Granularity: 1Minute
           Metrics:
@@ -516,10 +516,10 @@ Resources:
       ResourceSignal:
         Count: "2"
         Timeout: PT30M
-  LoadBalancer:
+  NginxAppProtectLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub '${AWS::StackName}-LoadBalancer'
+      Name: !Sub '${AWS::StackName}-NginxAppProtectLoadBalancer'
       Scheme: internet-facing
       Subnets: 
         - !Ref PublicSubnet1
@@ -527,20 +527,20 @@ Resources:
       Type: network
       Tags:
         - Key: Name
-          Value:  !Sub '${AWS::StackName}-LoadBalancer'
+          Value:  !Sub '${AWS::StackName}-NginxAppProtectLoadBalancer'
   HTTPLoadBalancerListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      LoadBalancerArn: !Ref LoadBalancer
+      LoadBalancerArn: !Ref NginxAppProtectLoadBalancer
       Port: 80
       Protocol: TCP
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref AppProtectTargetGroup
-  AppProtectTargetGroup:
+          TargetGroupArn: !Ref NginxAppProtectTargetGroup
+  NginxAppProtectTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub '${AWS::StackName}-AppProtectTargetGroup'
+      Name: !Sub '${AWS::StackName}-NginxAppProtectTargetGroup'
       HealthCheckPort: "81"
       HealthCheckProtocol: TCP
       HealthyThresholdCount: 3
@@ -551,10 +551,10 @@ Resources:
       TargetGroupAttributes:
       - Key: deregistration_delay.timeout_seconds
         Value: "20"
-  NginxPlusIAMRole:
+  NginxAppProtectIAMRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-NginxPlusIAMRole'
+      RoleName: !Sub '${AWS::StackName}-NginxAppProtectIAMRole'
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -565,7 +565,7 @@ Resources:
             Action:
               - sts:AssumeRole
       Policies:
-        - PolicyName: !Sub '${AWS::StackName}-NginxPlusASGPolicy'
+        - PolicyName: !Sub '${AWS::StackName}-NginxAppProtectASGPolicy'
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -585,13 +585,13 @@ Resources:
                   - !Join
                     - ""
                     - - "arn:aws:s3:::"
-                      - !Ref "NginxPlusArtifactsBucket"
+                      - !Ref "NginxAppProtectArtifactsBucket"
                   - !Join
                     - ""
                     - - "arn:aws:s3:::"
-                      - !Ref "NginxPlusArtifactsBucket"
+                      - !Ref "NginxAppProtectArtifactsBucket"
                       - /*
-        - PolicyName: !Sub '${AWS::StackName}-NginxPlusCloudWatchPolicy'
+        - PolicyName: !Sub '${AWS::StackName}-NginxAppProtectCloudWatchPolicy'
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -611,37 +611,37 @@ Resources:
                       - !Ref "AWS::Region"
                       - !Ref "AWS::AccountId"
                       - log-group
-                      - !Ref "NginxPlusLogGroup"
+                      - !Ref "NginxAppProtectLogGroup"
                       - "*"
               - Action:
                   - "cloudwatch:PutMetricData"
                 Effect: Allow
                 # TODO: check correct resource
                 Resource: "*"
-  NginxInstanceProfile:
+  NginxAppProtectInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Path: /
       Roles:
-        - !Ref "NginxPlusIAMRole"
-  NginxPlusRepo:
+        - !Ref "NginxAppProtectIAMRole"
+  NginxAppProtectRepo:
     Type: AWS::CodeCommit::Repository
     Properties:
-      RepositoryName: !Sub '${AWS::StackName}-NginxPlusRepo'
-      RepositoryDescription: This is a repository for Nginx Plus configuration.
+      RepositoryName: !Sub '${AWS::StackName}-NginxAppProtectRepo'
+      RepositoryDescription: This is a repository for Nginx App Protect configuration.
       Code:
         BranchName: master
         S3:
           Bucket: nginx-plus-app-protect-cf
           Key: codecommit-base.zip
-  NginxPlusCodeBuild:
+  NginxAppProtectCodeBuild:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub '${AWS::StackName}-NginxPlusCodeBuild'
+      Name: !Sub '${AWS::StackName}-NginxAppProtectCodeBuild'
       Description: Build nginx config
-      ServiceRole: !GetAtt NginxPlusCodeBuildRole.Arn
+      ServiceRole: !GetAtt NginxAppProtectCodeBuildRole.Arn
       Artifacts:
-        Location: !Ref "NginxPlusArtifactsBucket"
+        Location: !Ref "NginxAppProtectArtifactsBucket"
         Name: "nginx-config.zip"
         NamespaceType: BUILD_ID
         Packaging: ZIP
@@ -652,17 +652,17 @@ Resources:
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
       Source:
-        Location: !GetAtt NginxPlusRepo.CloneUrlHttp
+        Location: !GetAtt NginxAppProtectRepo.CloneUrlHttp
         Type: CODECOMMIT
       LogsConfig:
         # TODO: Add cloudwatch or S3 logs
         CloudWatchLogs:
           Status: DISABLED
       TimeoutInMinutes: 10
-  NginxPlusCodeBuildRole:
+  NginxAppProtectCodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-NginxPlusCodeBuildRole'
+      RoleName: !Sub '${AWS::StackName}-NginxAppProtectCodeBuildRole'
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -674,7 +674,7 @@ Resources:
         Version: "2012-10-17"
       Path: /
       Policies:
-        - PolicyName: !Sub '${AWS::StackName}-NginxPlusCodeBuildPolicy'
+        - PolicyName: !Sub '${AWS::StackName}-NginxAppProtectCodeBuildPolicy'
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -689,16 +689,16 @@ Resources:
                   - !Join
                     - ""
                     - - "arn:aws:s3:::"
-                      - !Ref "NginxPlusArtifactsBucket"
+                      - !Ref "NginxAppProtectArtifactsBucket"
                   - !Join
                     - ""
                     - - "arn:aws:s3:::"
-                      - !Ref "NginxPlusArtifactsBucket"
+                      - !Ref "NginxAppProtectArtifactsBucket"
                       - /*
-  NginxPlusCodeDeployRole:
+  NginxAppProtectCodeDeployRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-NginxPlusCodeDeployRole'
+      RoleName: !Sub '${AWS::StackName}-NginxAppProtectCodeDeployRole'
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -709,7 +709,7 @@ Resources:
                 - codedeploy.amazonaws.com
       Path: /
       Policies:
-        - PolicyName: !Sub '${AWS::StackName}-NginxPlusCodeDeployPolicy'
+        - PolicyName: !Sub '${AWS::StackName}-NginxAppProtectCodeDeployPolicy'
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -744,10 +744,10 @@ Resources:
                   - elasticloadbalancing:Describe*
                 Effect: Allow
                 Resource: "*"
-  NginxPlusCodePipelineRole:
+  NginxAppProtectPipelineRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-NginxPlusCodePipelineRole'
+      RoleName: !Sub '${AWS::StackName}-NginxAppProtectPipelineRole'
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -758,7 +758,7 @@ Resources:
                 - codepipeline.amazonaws.com
       Path: /
       Policies:
-        - PolicyName: !Sub '${AWS::StackName}-NginxPlusCodePipelinePolicy'
+        - PolicyName: !Sub '${AWS::StackName}-NginxAppProtectPipelinePolicy'
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -777,14 +777,14 @@ Resources:
                       - codecommit
                       - !Ref "AWS::Region"
                       - !Ref "AWS::AccountId"
-                      - !GetAtt NginxPlusRepo.Name
+                      - !GetAtt NginxAppProtectRepo.Name
               - Action:
                   - codebuild:StartBuild
                   - codebuild:BatchGetBuilds
                   - codebuild:StopBuild
                 Effect: Allow
                 Resource:
-                  - !GetAtt "NginxPlusCodeBuild.Arn"
+                  - !GetAtt "NginxAppProtectCodeBuild.Arn"
               - Action:
                   - codedeploy:CreateDeployment
                   - codedeploy:GetApplicationRevision
@@ -803,8 +803,8 @@ Resources:
                       - deploymentgroup
                       - !Join
                         - "/"
-                        - - !Ref "NginxPlusCodeDeployApp"
-                          - !Ref "NginxPlusDeploymentGroup"
+                        - - !Ref "NginxAppProtectCodeDeployApp"
+                          - !Ref "NginxAppProtectDeploymentGroup"
                   - !Join
                     - ":"
                     - - arn
@@ -813,7 +813,7 @@ Resources:
                       - !Ref "AWS::Region"
                       - !Ref "AWS::AccountId"
                       - application
-                      - !Ref "NginxPlusCodeDeployApp"
+                      - !Ref "NginxAppProtectCodeDeployApp"
                   - !Join
                     - ":"
                     - - arn
@@ -833,58 +833,58 @@ Resources:
                   - !Join
                     - ""
                     - - "arn:aws:s3:::"
-                      - !Ref "NginxPlusArtifactsBucket"
+                      - !Ref "NginxAppProtectArtifactsBucket"
                   - !Join
                     - ""
                     - - "arn:aws:s3:::"
-                      - !Ref "NginxPlusArtifactsBucket"
+                      - !Ref "NginxAppProtectArtifactsBucket"
                       - /*
-  NginxPlusArtifactsBucket:
+  NginxAppProtectArtifactsBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Delete
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub '${AWS::StackName}-NginxPlusArtifactsBucket'
+          Value: !Sub '${AWS::StackName}-NginxAppProtectArtifactsBucket'
       VersioningConfiguration:
         Status: Enabled
-  NginxPlusCodeDeployApp:
+  NginxAppProtectCodeDeployApp:
     Type: AWS::CodeDeploy::Application
     Properties:
-      ApplicationName: !Sub '${AWS::StackName}-NginxPlusCodeDeployApp'      
+      ApplicationName: !Sub '${AWS::StackName}-NginxAppProtectCodeDeployApp'      
       ComputePlatform: Server
-  NginxPlusDeploymentConfig:
+  NginxAppProtectDeploymentConfig:
     Type: AWS::CodeDeploy::DeploymentConfig
     Properties:
-      DeploymentConfigName: !Sub '${AWS::StackName}-NginxPlusDeploymentConfig'
+      DeploymentConfigName: !Sub '${AWS::StackName}-NginxAppProtectDeploymentConfig'
       MinimumHealthyHosts:
         Type: FLEET_PERCENT
         Value: 50
-  NginxPlusDeploymentGroup:
+  NginxAppProtectDeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Properties:
       # TODO: alarms
       #AlarmConfiguration:
       #Alarms:
       #  - Name: !Ref myAlarm
-      DeploymentConfigName: !Ref NginxPlusDeploymentConfig
-      ApplicationName: !Ref NginxPlusCodeDeployApp
-      DeploymentGroupName: !Sub '${AWS::StackName}-NginxPlusDeploymentGroup'    
+      DeploymentConfigName: !Ref NginxAppProtectDeploymentConfig
+      ApplicationName: !Ref NginxAppProtectCodeDeployApp
+      DeploymentGroupName: !Sub '${AWS::StackName}-NginxAppProtectDeploymentGroup'    
       LoadBalancerInfo:
         TargetGroupInfoList:
-          - Name: !GetAtt AppProtectTargetGroup.TargetGroupName
+          - Name: !GetAtt NginxAppProtectTargetGroup.TargetGroupName
       DeploymentStyle:
         DeploymentOption: WITH_TRAFFIC_CONTROL
-      ServiceRoleArn: !GetAtt NginxPlusCodeDeployRole.Arn
+      ServiceRoleArn: !GetAtt NginxAppProtectCodeDeployRole.Arn
       AutoScalingGroups:
         - !Ref NginxAppProtectASG
-  NginxPlusCodePipeline:
+  NginxAppProtectPipeline:
     Type: AWS::CodePipeline::Pipeline
     DependsOn:
-      - "LoadBalancer"
+      - "NginxAppProtectLoadBalancer"
     Properties:
-      Name: !Sub '${AWS::StackName}-NginxPlusCodePipeline'
-      RoleArn: !GetAtt NginxPlusCodePipelineRole.Arn
+      Name: !Sub '${AWS::StackName}-NginxAppProtectPipeline'
+      RoleArn: !GetAtt NginxAppProtectPipelineRole.Arn
       Stages:
         - Name: Source
           Actions:
@@ -895,15 +895,12 @@ Resources:
                 Version: "1"
                 Provider: CodeCommit
               Configuration:
-                RepositoryName: !GetAtt NginxPlusRepo.Name
+                RepositoryName: !GetAtt NginxAppProtectRepo.Name
                 BranchName: master
                 PollForSourceChanges: true
               InputArtifacts: []
               OutputArtifacts:
-                - Name: !Join
-                    - "-"
-                    - - !Ref "AWS::StackName"
-                      - SourceArtifact
+                - Name: !Sub '${AWS::StackName}-SourceArtifact'
               RunOrder: 1
         - Name: Build
           Actions:
@@ -914,40 +911,31 @@ Resources:
                 Version: "1"
                 Provider: CodeBuild
               Configuration:
-                ProjectName: !Ref NginxPlusCodeBuild
+                ProjectName: !Ref NginxAppProtectCodeBuild
               InputArtifacts:
-                - Name: !Join
-                    - "-"
-                    - - !Ref "AWS::StackName"
-                      - SourceArtifact
+                - Name: !Sub '${AWS::StackName}-SourceArtifact'
               OutputArtifacts:
-                - Name: !Join
-                    - "-"
-                    - - !Ref "AWS::StackName"
-                      - BuildArtifact
+                - Name: !Sub '${AWS::StackName}-BuildArtifact'
               RunOrder: 1
         - Name: Deploy
           Actions:
             - Name: DeployAction
               InputArtifacts:
-                - Name: !Join
-                    - "-"
-                    - - !Ref "AWS::StackName"
-                      - BuildArtifact
+                - Name: !Sub '${AWS::StackName}-BuildArtifact'
               ActionTypeId:
                 Category: Deploy
                 Owner: AWS
                 Version: "1"
                 Provider: CodeDeploy
               Configuration:
-                ApplicationName: !Ref NginxPlusCodeDeployApp
-                DeploymentGroupName: !Ref NginxPlusDeploymentGroup
+                ApplicationName: !Ref NginxAppProtectCodeDeployApp
+                DeploymentGroupName: !Ref NginxAppProtectDeploymentGroup
               RunOrder: 1
       ArtifactStore:
         Type: S3
-        Location: !Ref NginxPlusArtifactsBucket
-  AppProtectDashboard:
+        Location: !Ref NginxAppProtectArtifactsBucket
+  NginxAppProtectDashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
-      DashboardName: !Sub '${AWS::StackName}-AppProtectDashboard'
-      DashboardBody: !Sub '{"widgets":[{"height":6,"width":15,"y":0,"x":3,"type":"log","properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"request_status=\\\"alerted\\\"\" as alerted_requests\n| parse @message \"request_status=\\\"blocked\\\"\" as blocked_requests\n| parse @message \"request_status=\\\"passed\\\"\" as passed_requests\n| sort @timestamp desc\n| stats count(alerted_requests) as alerted, count(blocked_requests) as blocked, count(passed_requests) as passed by bin(5m)","region":"${AWS::Region}","stacked":true,"view":"timeSeries","title":"AppProtect Requests"}},{"height":6,"width":6,"y":0,"x":18,"type":"log","properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message /request_status=\"(?<request_status>.*?)\"/\n| sort @timestamp desc\n| stats count(*) as requests by request_status","region":"${AWS::Region}","stacked":false,"view":"pie","title":"Total Requests"}},{"height":6,"width":6,"y":6,"x":0,"type":"metric","properties":{"view":"timeSeries","stacked":true,"metrics":[["AWS/EC2","CPUUtilization","AutoScalingGroupName","${NginxAppProtectASG}"]],"region":"${AWS::Region}"}},{"height":6,"width":6,"y":6,"x":6,"type":"metric","properties":{"view":"timeSeries","stacked":true,"metrics":[["AWS/EC2","NetworkIn","AutoScalingGroupName","${NginxAppProtectASG}"],[".","NetworkOut",".","."]],"region":"${AWS::Region}"}},{"height":12,"width":24,"y":12,"x":0,"type":"log","properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /attack_type=\\\"(?<attack_type>.*?)\\\",(?<part1>.*?),ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",(?<part3>.*?),sub_violations=\\\"(?<sub_violations>.*?)\\\",support_id=\\\"(?<support_id>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| display @timestamp, request_status, attack_type, ip_client, sub_violations, support_id\n| sort @timestamp desc\n| limit 20","region":"${AWS::Region}","stacked":false,"view":"table","title":"Alerts Log"}},{"height":3,"width":3,"y":0,"x":0,"type":"metric","properties":{"view":"singleValue","metrics":[["AWS/AutoScaling","GroupTotalInstances","AutoScalingGroupName","${NginxAppProtectASG}"]],"region":"${AWS::Region}","title":"Total Instances"}},{"height":3,"width":3,"y":3,"x":0,"type":"metric","properties":{"view":"singleValue","metrics":[["AWS/NetworkELB","HealthyHostCount","TargetGroup","${AppProtectTargetGroup.TargetGroupFullName}","LoadBalancer","${LoadBalancer.LoadBalancerFullName}"]],"region":"${AWS::Region}","title":"Healthy Instances"}},{"type":"log","x":12,"y":6,"width":6,"height":6,"properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"response_code=\\\"*\\\"\" as response_code\n| filter response_code > 0\n| stats count(response_code) as code by response_code","region":"${AWS::Region}","stacked":false,"title":"Response Codes","view":"bar"}},{"type":"log","x":18,"y":6,"width":6,"height":6,"properties":{"query":"SOURCE \"${NginxPlusLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| stats count(ip_client) as count by ip_client as ip\n| sort count desc\n| limit 10","region":"${AWS::Region}","stacked":false,"title":"Top Attackers","view":"table"}}]}'
+      DashboardName: !Sub '${AWS::StackName}-NginxAppProtectDashboard'
+      DashboardBody: !Sub '{"widgets":[{"height":6,"width":15,"y":0,"x":3,"type":"log","properties":{"query":"SOURCE \"${NginxAppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"request_status=\\\"alerted\\\"\" as alerted_requests\n| parse @message \"request_status=\\\"blocked\\\"\" as blocked_requests\n| parse @message \"request_status=\\\"passed\\\"\" as passed_requests\n| sort @timestamp desc\n| stats count(alerted_requests) as alerted, count(blocked_requests) as blocked, count(passed_requests) as passed by bin(5m)","region":"${AWS::Region}","stacked":true,"view":"timeSeries","title":"AppProtect Requests"}},{"height":6,"width":6,"y":0,"x":18,"type":"log","properties":{"query":"SOURCE \"${NginxAppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message /request_status=\"(?<request_status>.*?)\"/\n| sort @timestamp desc\n| stats count(*) as requests by request_status","region":"${AWS::Region}","stacked":false,"view":"pie","title":"Total Requests"}},{"height":6,"width":6,"y":6,"x":0,"type":"metric","properties":{"view":"timeSeries","stacked":true,"metrics":[["AWS/EC2","CPUUtilization","AutoScalingGroupName","${NginxAppProtectASG}"]],"region":"${AWS::Region}"}},{"height":6,"width":6,"y":6,"x":6,"type":"metric","properties":{"view":"timeSeries","stacked":true,"metrics":[["AWS/EC2","NetworkIn","AutoScalingGroupName","${NginxAppProtectASG}"],[".","NetworkOut",".","."]],"region":"${AWS::Region}"}},{"height":12,"width":24,"y":12,"x":0,"type":"log","properties":{"query":"SOURCE \"${NginxAppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /attack_type=\\\"(?<attack_type>.*?)\\\",(?<part1>.*?),ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",(?<part3>.*?),sub_violations=\\\"(?<sub_violations>.*?)\\\",support_id=\\\"(?<support_id>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| display @timestamp, request_status, attack_type, ip_client, sub_violations, support_id\n| sort @timestamp desc\n| limit 20","region":"${AWS::Region}","stacked":false,"view":"table","title":"Alerts Log"}},{"height":3,"width":3,"y":0,"x":0,"type":"metric","properties":{"view":"singleValue","metrics":[["AWS/AutoScaling","GroupTotalInstances","AutoScalingGroupName","${NginxAppProtectASG}"]],"region":"${AWS::Region}","title":"Total Instances"}},{"height":3,"width":3,"y":3,"x":0,"type":"metric","properties":{"view":"singleValue","metrics":[["AWS/NetworkELB","HealthyHostCount","TargetGroup","${NginxAppProtectTargetGroup.TargetGroupFullName}","LoadBalancer","${NginxAppProtectLoadBalancer.LoadBalancerFullName}"]],"region":"${AWS::Region}","title":"Healthy Instances"}},{"type":"log","x":12,"y":6,"width":6,"height":6,"properties":{"query":"SOURCE \"${NginxAppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"response_code=\\\"*\\\"\" as response_code\n| filter response_code > 0\n| stats count(response_code) as code by response_code","region":"${AWS::Region}","stacked":false,"title":"Response Codes","view":"bar"}},{"type":"log","x":18,"y":6,"width":6,"height":6,"properties":{"query":"SOURCE \"${NginxAppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| stats count(ip_client) as count by ip_client as ip\n| sort count desc\n| limit 10","region":"${AWS::Region}","stacked":false,"title":"Top Attackers","view":"table"}}]}'
