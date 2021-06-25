@@ -502,6 +502,9 @@ Resources:
       MetricsCollection:
         - Granularity: 1Minute
           Metrics:
+            - GroupMinSize
+            - GroupMaxSize
+            - GroupDesiredCapacity
             - GroupInServiceInstances
             - GroupTotalInstances
       Tags:
@@ -644,7 +647,7 @@ Resources:
       Statistic: Average
       Period: 300
       EvaluationPeriods: 2
-      Threshold: 80
+      Threshold: 90
       AlarmActions: 
         - !Ref AppProtectScaleUpPolicy
       Dimensions:
@@ -656,18 +659,48 @@ Resources:
     Properties:
       AlarmName: !Sub '${AWS::StackName}-AsgCpuAlarmLow'
       AlarmDescription: "Scale-down if CPU < 70% for 10 minutes"
-      MetricName: CPUUtilization
-      Namespace: "AWS/EC2"
-      Statistic: Average
-      Period: 300
       EvaluationPeriods: 2
-      Threshold: 70
+      Metrics:
+        - Id: exp1
+          ReturnData: true
+          Expression: "IF(tot1 > min1 AND cpu1 < 70, 1, 0)"
+        - Id: min1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: GroupDesiredCapacity
+              Namespace: "AWS/AutoScaling"
+              Dimensions:
+                - Name: "AutoScalingGroupName"
+                  Value: !Ref AppProtectASG
+            Stat: Minimum
+            Period: 300     
+        - Id: tot1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: GroupTotalInstances
+              Namespace: "AWS/AutoScaling"
+              Dimensions:
+                - Name: "AutoScalingGroupName"
+                  Value: !Ref AppProtectASG
+            Stat: Minimum
+            Period: 300      
+        - Id: cpu1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: CPUUtilization
+              Namespace: "AWS/EC2"
+              Dimensions:
+                - Name: "AutoScalingGroupName"
+                  Value: !Ref AppProtectASG
+            Stat: Average
+            Period: 300
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
       AlarmActions: 
         - !Ref AppProtectScaleDownPolicy
-      Dimensions:
-        - Name: "AutoScalingGroupName"
-          Value: !Ref AppProtectASG
-      ComparisonOperator: LessThanThreshold        
   AppProtectRepo:
     Type: AWS::CodeCommit::Repository
     Properties:
