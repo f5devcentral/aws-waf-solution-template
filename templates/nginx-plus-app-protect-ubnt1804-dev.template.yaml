@@ -40,9 +40,6 @@ Metadata:
       NginxNodesDesiredCapacity:
         default: "Desired dataplane nodes count"
 Parameters:
-  KeyPairName:
-    Description: SSH key pair for dataplane VMs. (For developement purposes only)
-    Type: AWS::EC2::KeyPair::KeyName
   NginxNodesDesiredCapacity:
     Default: "2"
     Description: The desired capacity for the NGINX Auto Scaling group
@@ -449,7 +446,6 @@ Resources:
         - AWSAMIRegionMap
         - !Ref "AWS::Region"
         - UBUNTU1804DEV
-      KeyName: !Ref "KeyPairName"
       InstanceType: !Ref "NginxInstanceType"
       IamInstanceProfile: !Ref "AppProtectInstanceProfile"
       SecurityGroups:
@@ -943,12 +939,6 @@ Outputs:
   AppProtectLBDNSName:
     Description: "The DNSName of the Load balancer"
     Value: !GetAtt AppProtectLB.DNSName
-  NatGateway1IP:
-    Description: "NatGateway(AZ1) IP Address"
-    Value: !GetAtt NatGateway1EIP.AllocationId
-  NatGateway2IP:
-    Description: "NatGateway(AZ2) IP Address"
-    Value: !GetAtt NatGateway2EIP.AllocationId    
   AppProtectRepoHttp:
     Description: "The URL to use for cloning the repository over HTTPS"
     Value: !GetAtt AppProtectRepo.CloneUrlHttp
