@@ -922,7 +922,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub '${AWS::StackName}-AppProtectArtifacts'
+          Value: !Sub '${AWS::StackName}-app-protect-artifacts'
       VersioningConfiguration:
         Status: Enabled
   AppProtectCodeDeployApp:
