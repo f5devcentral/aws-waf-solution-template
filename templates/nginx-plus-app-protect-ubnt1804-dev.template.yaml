@@ -57,10 +57,12 @@ Parameters:
     Type: String
     Default: t3.small
     AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t3.nano
+      - t3.micro
       - t3.small
-      - t3.medium
-      - t3.large
-      - t3.xlarge
   VpcCIDR:
     Description: VPC CIDR block
     Type: String
