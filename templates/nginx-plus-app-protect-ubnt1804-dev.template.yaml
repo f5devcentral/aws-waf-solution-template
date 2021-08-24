@@ -909,15 +909,8 @@ Resources:
                   - s3:PutObject
                 Effect: Allow
                 Resource:
-                  - !Join
-                    - ""
-                    - - "arn:aws:s3:::"
-                      - !Ref "AppProtectArtifacts"
-                  - !Join
-                    - ""
-                    - - "arn:aws:s3:::"
-                      - !Ref "AppProtectArtifacts"
-                      - /*
+                  - !Sub 'arn:aws:s3:::${AppProtectArtifacts}'
+                  - !Sub 'arn:aws:s3:::${AppProtectArtifacts}/*'
   AppProtectArtifacts:
     Type: AWS::S3::Bucket
     DeletionPolicy: Delete
@@ -926,7 +919,79 @@ Resources:
         - Key: Name
           Value: !Sub '${AWS::StackName}-app-protect-artifacts'
       VersioningConfiguration:
-        Status: Enabled
+        Status: Enabled                      
+  CleanupBucketRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CleanupBucketRole'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-CleanupBucketPolicy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:s3:::${AppProtectArtifacts}'
+                  - !Sub 'arn:aws:s3:::${AppProtectArtifacts}/*'
+  CleanupBucketOnDeleteFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code: 
+        ZipFile: |
+          import json, boto3, logging
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              logger.info("event: {}".format(event))
+              try:
+                  bucket = event['ResourceProperties']['BucketName']
+                  logger.info("bucket: {}, event['RequestType']: {}".format(bucket,event['RequestType']))
+                  if event['RequestType'] == 'Delete':
+                      s3 = boto3.resource('s3')
+                      bucket = s3.Bucket(bucket)
+                      for obj in bucket.objects.filter():
+                          logger.info("delete obj: {}".format(obj))
+                          s3.Object(bucket.name, obj.key).delete()
+                      bucket.object_versions.all().delete()
+                  sendResponseCfn(event, context, cfnresponse.SUCCESS)
+              except Exception as e:
+                  logger.info("Exception: {}".format(e))
+                  sendResponseCfn(event, context, cfnresponse.FAILED)
+
+          def sendResponseCfn(event, context, responseStatus):
+              responseData = {}
+              responseData['Data'] = {}
+              cfnresponse.send(event, context, responseStatus, responseData, "CustomResourcePhysicalID")              
+
+      Handler: "index.lambda_handler"
+      Runtime: python3.7
+      MemorySize: 128
+      Timeout: 60
+      Role: !GetAtt CleanupBucketRole.Arn     
+  CleanupBucketOnDelete:
+    Type: Custom::cleanupbucket
+    Properties:
+      ServiceToken: !GetAtt CleanupBucketOnDeleteFunction.Arn
+      BucketName: !Ref AppProtectArtifacts      
   AppProtectCodeDeployApp:
     Type: AWS::CodeDeploy::Application
     Properties:
