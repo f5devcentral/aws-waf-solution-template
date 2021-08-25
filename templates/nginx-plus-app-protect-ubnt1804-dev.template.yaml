@@ -542,9 +542,13 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: !Sub '${AWS::StackName}-AppProtectTargetGroup'
+      HealthCheckEnabled: true
       HealthCheckPort: "81"
       HealthCheckProtocol: TCP
-      HealthyThresholdCount: 3
+      HealthyThresholdCount: 2
+      HealthCheckTimeoutSeconds: 10
+      HealthCheckIntervalSeconds: 10
+      UnhealthyThresholdCount: 2
       VpcId: !Ref VPC
       TargetType: instance
       Port: 80
@@ -712,7 +716,7 @@ Resources:
         BranchName: master
         S3:
           Bucket: nginx-plus-app-protect-cf
-          Key: codecommit-base.zip
+          Key: codecommit-base-v1.zip
   AppProtectCodeBuild:
     Type: AWS::CodeBuild::Project
     Properties:

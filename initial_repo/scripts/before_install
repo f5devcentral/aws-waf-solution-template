@@ -1,0 +1,3 @@
+#!/bin/bash
+
+rm -rf /etc/nginx/conf.d/*
