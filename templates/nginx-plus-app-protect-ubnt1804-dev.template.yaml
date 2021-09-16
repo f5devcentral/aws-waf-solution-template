@@ -541,7 +541,7 @@ Resources:
   AppProtectTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub '${AWS::StackName}-APTG'
+      Name: !Sub '${AWS::StackName}-AppProtectTargetGroup'
       HealthCheckEnabled: true
       HealthCheckPort: "81"
       HealthCheckProtocol: TCP
