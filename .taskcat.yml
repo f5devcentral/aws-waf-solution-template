@@ -2,7 +2,6 @@
 project:
   name: ngnx
   regions:
-    - us-east-1    
     - us-east-2
   shorten_stack_name: true
 tests:
