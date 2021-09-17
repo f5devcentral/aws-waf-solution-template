@@ -38,6 +38,9 @@ jobs:
           commands: test run -n
           update_cfn_lint: true
           update_taskcat: true         
+      - name: TEST-1 NAP Default Page Verification
+        run:
+          python test1.py
       - name: Delete Stack
         run:
           python delete_stack.py 
