@@ -1,0 +1,9 @@
+---
+project:
+  name: ngnx
+  regions:    
+    - us-east-2
+  shorten_stack_name: true
+tests:
+  nap:
+    template: ./templates/nginx-plus-app-protect-ubnt1804-dev.template.yaml
