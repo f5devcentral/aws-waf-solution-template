@@ -4,7 +4,7 @@ Deployment of production grade WAF is challenging. Usually it takes at least sev
 
 The main purpose of this project is to provide an AWS CloudFormation template that follows system design principles and deploys complete, production grade WAF solution to AWS cloud. 
 
-# Solution
+# Solution Overview
 
 The idea behind this solution is to provide a production grade WAF data plane and streamline day to day WAF operations via user friendly interfaces for configuration and visibility. Following picture represents high level architecture.
 
@@ -23,7 +23,13 @@ Data plane VMs continiously send logs and metrics to AWS CloudWatch. It in turn 
 
 Therefore, the solution allows to use a WAF from day zero. It provides maintnaince free data plane, convinient tool for configuration management, and complehensive visibility to the system.
 
-Once deployed solution becomes your own SaaS WAF. To protect an application just redirect traffic to your WAF and configure to forward it back to your backend. You are free to protect more than one application. All features for standalone NGINX applicatible here as well.
+# Deployment Model
+
+Template deploys a WAF into a separate AWS VPC, therefore deployment model becomes similar to SaaS.
+
+![Deployment model](images/deployment-model.png)
+
+In which case all traffic arriving from users gets inspected and then forwarded to one or more applications regardless of their location.
 
 # Getting Started
 
