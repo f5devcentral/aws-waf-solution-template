@@ -2,20 +2,9 @@ name: Cloud Formation Template
 
 on:
   push: {branches: master}
-  pull_request: {branches: main} 
+  pull_request: {branches: master} 
   
 jobs:
-  cfn-lint-chk:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Setup Cloud Formation Linter with Latest Version
-        uses: scottbrenner/cfn-lint-action@v2
-      - name: Cloud Formation Version & Verification - Ubuntu.
-        run: |
-          cfn-lint ./templates/nginx-plus-app-protect-ubnt1804-dev.template.yaml --ignore-checks W
-          cfn-lint --version
   cft-upload:
     runs-on: ubuntu-latest
     steps:
@@ -35,12 +24,8 @@ jobs:
       - name: Launch the Stack
         uses: ShahradR/action-taskcat@v1
         with:
-          commands: test run -n
-          update_cfn_lint: true
+          commands: test run
           update_taskcat: true         
-      - name: Delete Stack
-        run:
-          python delete_stack.py 
       - name: Getting Artifacts
         uses: actions/upload-artifact@v2
         if: ${{ always() }}
