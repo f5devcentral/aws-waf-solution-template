@@ -1,0 +1,18 @@
+name: Cloud Formation Template
+
+on:
+  push: {branches: master}
+  pull_request: {branches: master} 
+  
+jobs:
+  cfn-lint-chk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install cfn-lint
+        run:  pip install cfn-lint
+      - name: Cloud Formation Version & Verification - Ubuntu.
+        run: |
+          cfn-lint ./templates/nginx-plus-app-protect-ubnt1804-dev.template.yaml --ignore-checks W
+          cfn-lint --version
