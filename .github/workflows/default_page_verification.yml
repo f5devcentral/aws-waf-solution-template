@@ -1,0 +1,39 @@
+name: Cloud Formation Template
+
+on:
+  push: {branches: master}
+  pull_request: {branches: master} 
+  
+jobs:
+  cft-basic_page_chk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+      - name: Install Dependencies
+        run: |
+          python -m pip install --user boto3
+          python -m pip install --user requests
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{secrets.AWS_ACCESS_KEY_ID}}
+          aws-secret-access-key: ${{secrets.AWS_SECRET_ACCESS_KEY}}
+          aws-session-token: ${{secrets.AWS_SESSION_TOKEN}}
+          aws-region: ${{secrets.AWS_REGION}}
+      - name: Create Stack
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: ${{secrets.STACK_NAME}}
+          template: ${{secrets.Template_Name}}
+          capabilities: CAPABILITY_NAMED_IAM     
+      - name: Verify Stack Basic Page
+        run:
+          python scripts/pipeline/basic_page_verification.py
+        env:
+          STACK_NAME: ${{secrets.STACK_NAME}}  
+      - name: Delete Stack
+        run:
+          python scripts/pipeline/delete_stack.py 
+        env:
+          STACK_NAME: ${{secrets.STACK_NAME}}            
