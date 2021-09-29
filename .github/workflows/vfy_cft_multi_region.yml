@@ -1,0 +1,29 @@
+name: Cloud Formation Template
+
+on:
+  push: {branches: master}
+  pull_request: {branches: master} 
+  
+jobs:
+  cft-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{secrets.AWS_ACCESS_KEY_ID}}
+          aws-secret-access-key: ${{secrets.AWS_SECRET_ACCESS_KEY}}
+          aws-session-token: ${{secrets.AWS_SESSION_TOKEN}}
+          aws-region: ${{secrets.AWS_REGION}}
+      - name: Launch the Stack
+        uses: ShahradR/action-taskcat@v1
+        with:
+          commands: test run
+          update_taskcat: true         
+      - name: Getting Artifacts
+        uses: actions/upload-artifact@v2
+        if: ${{ always() }}
+        with:
+          name: taskcat_outputs
+          path: ${{ github.workspace }}/taskcat_outputs/
