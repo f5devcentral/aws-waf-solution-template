@@ -35,7 +35,8 @@ In which case all traffic arriving from users gets inspected and then forwarded 
 
 ## Deployment
 
-Deployment process is standard as for any other CloudFormation template.
+Deployment process is standard as for any other CloudFormation template. The deployment requires subscription to [NGINX Plus with NGINX App Protect Developer - Ubuntu 18.04](https://aws.amazon.com/marketplace/pp/prodview-xogyq23b3mfge)
+
 1. Download template from `templates` folder to your filesystem
 2. Open AWS CloudFormation console and click "Create Stack"
 3. Select "Upload from a template file" and upload template from local filesystem
@@ -43,9 +44,9 @@ Deployment process is standard as for any other CloudFormation template.
 5. Set a checkbox against "I acknowledge that AWS CloudFormation might create IAM resources with custom names."
 6. Click create stack.
 
-<a href="https://console.aws.amazon.com/cloudformation/home?#/stacks/new?stackName=NAP&templateURL=https://aws-waf-solution-template.s3.amazonaws.com/release/v1.0.0/templates/nginx-plus-app-protect-ubnt1804-dev.template.yaml">
-    <img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png" />
-</a>
+Or click the button below:
+
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/new?stackName=NAP&templateURL=https://aws-waf-solution-template.s3.amazonaws.com/release/v1.0.0/templates/nginx-plus-app-protect-ubnt1804-dev.template.yaml)
 
 Or use following command to create a stack using aws cli:
 ```
