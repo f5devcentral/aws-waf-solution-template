@@ -43,11 +43,15 @@ Deployment process is standard as for any other CloudFormation template.
 5. Set a checkbox against "I acknowledge that AWS CloudFormation might create IAM resources with custom names."
 6. Click create stack.
 
+<a href="https://console.aws.amazon.com/cloudformation/home?#/stacks/new?stackName=NAP&templateURL=https://aws-waf-solution-template.s3.amazonaws.com/release/v1.0.0/templates/nginx-plus-app-protect-ubnt1804-dev.template.yaml">
+    <img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png" />
+</a>
+
 Or use following command to create a stack using aws cli:
 ```
 $ aws cloudformation create-stack --stack-name NAME_OF_YOUR STACK \
     --capabilities CAPABILITY_NAMED_IAM \
-    --template-body https://raw.githubusercontent.com/464d41/aws-waf-solutuon-template/master/templates/nginx-plus-app-protect-ubnt1804-dev.template.yaml
+    --template-body https://aws-waf-solution-template.s3.amazonaws.com/release/v1.0.0/templates/nginx-plus-app-protect-ubnt1804-dev.template.yaml
 ```
 
 ## Operations
