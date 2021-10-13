@@ -32,3 +32,6 @@ jobs:
           aws s3 sync ./templates/ s3://${{ env.AWS_S3_ARTIFACTS_BUCKET }}/release/${GITHUB_REF/refs\/tags\//}/templates/ --acl public-read
           echo "https://${{ env.AWS_S3_ARTIFACTS_BUCKET }}.s3.amazonaws.com/release/${GITHUB_REF/refs\/tags\//}/initial_repo/initial_repo.zip"
           echo "https://${{ env.AWS_S3_ARTIFACTS_BUCKET }}.s3.amazonaws.com/release/${GITHUB_REF/refs\/tags\//}/templates/--templatename--.yaml"
+          aws s3 rm --recursive s3://${{ env.AWS_S3_ARTIFACTS_BUCKET }}/release/latest/
+          aws s3 cp ./initial_repo.zip s3://${{ env.AWS_S3_ARTIFACTS_BUCKET }}/release/latest/initial_repo/ --acl public-read
+          aws s3 sync ./templates/ s3://${{ env.AWS_S3_ARTIFACTS_BUCKET }}/release/latest/templates/ --acl public-read
