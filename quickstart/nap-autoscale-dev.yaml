@@ -29,10 +29,6 @@ Outputs:
         - !GetAtt
           - Dag
           - Outputs.externalElasticLoadBalancerDnsName    
-  # autoscaleGroupName:
-  #   Value: !GetAtt
-  #     - Autoscale
-  #     - Outputs.autoscaleGroup
 Parameters:
 
   numAzs:
@@ -144,20 +140,6 @@ Parameters:
     Type: String
     Default: myUniqStr
 Resources:
-  # Access:
-  #   Type: 'AWS::CloudFormation::Stack'
-  #   Properties:
-  #     TemplateURL: !Sub
-  #       - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/access/access.yaml'
-  #       - S3Region: !Ref 's3BucketRegion'
-  #         S3Bucket: !Ref 's3BucketName'
-  #     Parameters:
-  #       cost: !Ref 'cost'
-  #       environment: !Ref 'environment'
-  #       group: !Ref 'group'
-  #       owner: !Ref 'owner'
-  #       logGroup: ''
-
   Pipeline:
     Type: 'AWS::CloudFormation::Stack'
     Properties:
