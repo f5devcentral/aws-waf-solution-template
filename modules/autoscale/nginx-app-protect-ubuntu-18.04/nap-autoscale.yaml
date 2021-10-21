@@ -47,13 +47,6 @@ Parameters:
     Description: REQUIRED - Provide AMI ID you wish to deploy.
     Type: AWS::EC2::Image::Id
   instanceType:
-    AllowedValues:
-      - t2.nano
-      - t2.micro
-      - t2.small
-      - t3.nano
-      - t3.micro
-      - t3.small
     ConstraintDescription: Must be a valid EC2 instance type for Nginx App Protect
     Default: t3.small
     Description: Enter valid instance type.

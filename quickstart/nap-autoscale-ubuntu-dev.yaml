@@ -19,6 +19,44 @@ Conditions:
     - '4'  
 Metadata:
   Version: 1.0.0
+Mappings:
+  amiRegionMap:
+    ap-east-1:
+      UBUNTU1804DEV: ami-02cbed36dd3616a84
+    ap-northeast-1:
+      UBUNTU1804DEV: ami-0ec278cf695de326c
+    ap-northeast-2:
+      UBUNTU1804DEV: ami-0a32800963fa115bb
+    ap-northeast-3:
+      UBUNTU1804DEV: ami-0491c330c1b3e44c9
+    ap-south-1:
+      UBUNTU1804DEV: ami-0139359797b6e3cbb
+    ap-southeast-1:
+      UBUNTU1804DEV: ami-09f7be100fa49db35
+    ap-southeast-2:
+      UBUNTU1804DEV: ami-0def18da152bd01ef
+    ca-central-1:
+      UBUNTU1804DEV: ami-0c6eed9d2e970780a
+    eu-central-1:
+      UBUNTU1804DEV: ami-0e1d0cb0c1de0aaed
+    eu-west-1:
+      UBUNTU1804DEV: ami-0c3748a507e3e6af6
+    eu-west-2:
+      UBUNTU1804DEV: ami-0525f8e90a9ea0713
+    eu-west-3:
+      UBUNTU1804DEV: ami-0c60f7962a6f712ed
+    eu-north-1:
+      UBUNTU1804DEV: ami-09ff9e4279f34d409
+    sa-east-1:
+      UBUNTU1804DEV: ami-00eef560ede5acabe
+    us-east-1:
+      UBUNTU1804DEV: ami-0f58d396d72867d57
+    us-east-2:
+      UBUNTU1804DEV: ami-0b912107985ac7145
+    us-west-1:
+      UBUNTU1804DEV: ami-02f5b222247cd8471
+    us-west-2:
+      UBUNTU1804DEV: ami-0ead4783e8d139c88  
 Outputs:
   externalDnsName:
     Value: !GetAtt Dag.Outputs.externalElasticLoadBalancerDnsName
@@ -114,6 +152,18 @@ Parameters:
     Description: REQUIRED - Supply the public key that will be used for SSH authentication
       to the BIG-IP and application virtual machines.
     Type: 'AWS::EC2::KeyPair::KeyName'
+
+  instanceType:
+    Description: Amazon EC2 instance type for the NGINX instances
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t3.nano
+      - t3.micro
+      - t3.small
 
   cost:
     Default: f5cost
@@ -248,7 +298,7 @@ Resources:
     Type: 'AWS::CloudFormation::Stack'
     Properties:
       TemplateURL: !Sub
-        - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/nap-autoscale/nap-autoscale-ubuntu-18.04.yaml'
+        - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/autoscale/nginx-app-protect-ubuntu-18.04/nap-autoscale.yaml'
         - S3Region: !Ref 's3BucketRegion'
           S3Bucket: !Ref 's3BucketName'
       Parameters:
@@ -257,13 +307,15 @@ Resources:
         group: !Ref 'group'
         owner: !Ref 'owner'
         externalTargetGroupHttp: !GetAtt Dag.Outputs.externalTargetGroupHttp
-        # TODO: ubuntu 18.04 us-east-1
-        imageId: ami-0f58d396d72867d57
-        instanceType: 't3.small'
-        provisionPublicIp: !Ref 'provisionPublicIp'
-        scalingMaxSize: !Ref 'napScalingMaxSize'
-        scalingMinSize: !Ref 'napScalingMinSize'
-        sshKey: !Ref 'sshKey'
+        imageId: !FindInMap
+        - amiRegionMap
+        - !Ref "AWS::Region"
+        - UBUNTU1804DEV
+        instanceType: !Ref instanceType
+        provisionPublicIp: !Ref provisionPublicIp
+        scalingMaxSize: !Ref napScalingMaxSize
+        scalingMinSize: !Ref napScalingMinSize
+        sshKey: !Ref sshKey
         subnets: !Join
           - ','
           - - !Select
