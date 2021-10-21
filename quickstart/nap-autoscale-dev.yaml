@@ -1,0 +1,320 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  This template creates Nginx App Protect Autoscale solution. The template uses
+  nested templates for provisioning network, access, compute resources for hosting
+  NAP Autoscale solution.
+Conditions:
+  az2: !Or
+    - !Equals
+      - !Ref numAzs
+      - '2'
+    - !Condition az3
+  az3: !Or
+    - !Equals
+      - !Ref numAzs
+      - '3'
+    - !Condition az4
+  az4: !Equals
+    - !Ref numAzs
+    - '4'  
+Metadata:
+  Version: 1.0.0
+Outputs:
+  externalDnsName:
+    Value: !GetAtt Dag.Outputs.externalElasticLoadBalancerDnsName
+  externalHttpsUrl:
+    Value: !Join
+      - ''
+      - - 'http://'
+        - !GetAtt
+          - Dag
+          - Outputs.externalElasticLoadBalancerDnsName    
+  # autoscaleGroupName:
+  #   Value: !GetAtt
+  #     - Autoscale
+  #     - Outputs.autoscaleGroup
+Parameters:
+
+  numAzs:
+    Default: 2
+    Description: Number of Availability Zones to use in the VPC. Region must support
+      number of availability  zones entered. Min 1 Max 4.
+    MaxValue: 4
+    MinValue: 1
+    Type: Number
+  provisionPublicIp:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Whether or not to provision Public IP Addresses for the BIG-IP Network
+      Interfaces.
+    Type: String
+  subnetMask:
+    ConstraintDescription: 'Subnet mask must be in value of 16-28. Total number of
+      subnets created from VPC must be greater than or equal to number of regions
+      multiplied by number of subnets. Example: 4 AZ with 8 subnets requires VPC supernetting
+      support 32 subnets.'
+    Default: 24
+    Description: 'Mask for subnets. Valid values include 16-28. Note supernetting
+      of VPC occurs based on mask provided; therefore, number of networks must be
+      >= to the number of subnets created. Mask for subnets. Valid values include
+      16-28.'
+    MaxValue: 28
+    MinValue: 16
+    Type: Number
+  vpcCidr:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$'
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC.
+    Type: String
+
+  napScalingMaxSize:
+    ConstraintDescription: Must be a number between 2-100
+    Default: 50
+    Description: Maximum number of NAP instances (2-100) that can be created in
+      the Auto Scale Group.
+    MaxValue: 100
+    MinValue: 2
+    Type: Number
+  napScalingMinSize:
+    ConstraintDescription: Must be a number between 1-99
+    Default: 2
+    Description: Minimum number of NAP instances (1-99) you want available in the
+      Auto Scale Group.
+    MaxValue: 99
+    MinValue: 1
+    Type: Number
+
+
+  artifactLocation:
+    AllowedPattern: ^.*[a-zA-Z]+/$
+    ConstraintDescription: key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Default: f5-aws-cloudformation/v1.0.0/examples/
+    Description: The path in the S3Bucket where the modules folder is located. Can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and forward
+      slash (/).
+    Type: String
+  s3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: >-
+      S3 bucket name can include numbers, lowercase letters, uppercase letters, and
+      hyphens (-). It cannot start or end with a hyphen (-).
+    Default: 'nginx-plus-app-protect-cf'
+    Description: >-
+      REQUIRED - S3 bucket name for the modules. S3 bucket name can include numbers,
+      lowercase letters, uppercase letters, and hyphens (-). It cannot start or end
+      with a hyphen (-).
+    Type: String
+  s3BucketRegion:
+    Default: us-east-1
+    Description: The AWS Region where the Quick Start S3 bucket (s3BucketName) is
+      hosted. When using your own bucket, you must specify this value.
+    Type: String
+
+  sshKey:
+    Description: REQUIRED - Supply the public key that will be used for SSH authentication
+      to the BIG-IP and application virtual machines.
+    Type: 'AWS::EC2::KeyPair::KeyName'
+
+  cost:
+    Default: f5cost
+    Description: Cost Center Tag.
+    Type: String
+  environment:
+    Default: f5env
+    Description: Environment Tag.
+    Type: String
+  group:
+    Default: f5group
+    Description: Group Tag.
+    Type: String
+  owner:
+    Default: f5owner
+    Description: Owner Tag.
+    Type: String
+
+  uniqueString:
+    ConstraintDescription: 'Must Contain between 1 and 12 alphanumeric characters
+      with first character as a letter.'
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9]{1,11}$
+    Description: Unique String used when creating object names or Tags.
+    Type: String
+    Default: myUniqStr
+Resources:
+  # Access:
+  #   Type: 'AWS::CloudFormation::Stack'
+  #   Properties:
+  #     TemplateURL: !Sub
+  #       - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/access/access.yaml'
+  #       - S3Region: !Ref 's3BucketRegion'
+  #         S3Bucket: !Ref 's3BucketName'
+  #     Parameters:
+  #       cost: !Ref 'cost'
+  #       environment: !Ref 'environment'
+  #       group: !Ref 'group'
+  #       owner: !Ref 'owner'
+  #       logGroup: ''
+
+  Pipeline:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub
+        - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/pipeline/pipeline.yaml'
+        - S3Region: !Ref 's3BucketRegion'
+          S3Bucket: !Ref 's3BucketName'
+      Parameters:
+        cost: !Ref 'cost'
+        environment: !Ref 'environment'
+        group: !Ref 'group'
+        owner: !Ref 'owner'
+        instanceIAMRole: !GetAtt NAPAutoScale.Outputs.napIAMRole
+        targetGroupName: !GetAtt Dag.Outputs.externalTargetGroupHttpName
+        autoScalingGroupList: !Join
+          - ','
+          - - !GetAtt NAPAutoScale.Outputs.autoScalingGroup
+
+  Telemetry:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub
+        - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/telemetry/nap-autoscale-telemetry.yaml'
+        - S3Region: !Ref 's3BucketRegion'
+          S3Bucket: !Ref 's3BucketName'
+      Parameters:
+        cost: !Ref 'cost'
+        environment: !Ref 'environment'
+        group: !Ref 'group'
+        owner: !Ref 'owner'
+        instanceIAMRole: !GetAtt NAPAutoScale.Outputs.napIAMRole
+        logGroupName: !Sub '${uniqueString}-log-group'
+        autoScalingGroup: !GetAtt NAPAutoScale.Outputs.autoScalingGroup
+        loadBalancerFullName: !GetAtt Dag.Outputs.externalElasticLoadBalancerFullName
+        targetGroupFullName: !GetAtt Dag.Outputs.externalTargetGroupHttpFullName
+
+  Dag:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub
+        - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/dag/dag.yaml'
+        - S3Region: !Ref 's3BucketRegion'
+          S3Bucket: !Ref 's3BucketName'
+      Parameters:
+        cost: !Ref 'cost'
+        environment: !Ref 'environment'
+        group: !Ref 'group'
+        externalSubnets: !Join
+          - ','
+          - - !Select
+              - '0'
+              - !Split
+                - ','
+                - !GetAtt Network.Outputs.subnetsA
+            - !If 
+              - az2
+              - !Select
+                - '0'
+                - !Split
+                  - ','
+                  - !GetAtt Network.Outputs.subnetsB 
+              - !Ref 'AWS::NoValue'
+            - !If 
+              - az3
+              - !Select
+                - '0'
+                - !Split
+                  - ','
+                  - !GetAtt Network.Outputs.subnetsC
+              - !Ref 'AWS::NoValue'
+            - !If 
+              - az4
+              - !Select
+                - '0'
+                - !Split
+                  - ','
+                  - !GetAtt Network.Outputs.subnetsD
+              - !Ref 'AWS::NoValue'
+        numberPublicExternalIpAddresses: 0
+        uniqueString: !Ref 'uniqueString'
+        vpc: !GetAtt
+          - Network
+          - Outputs.vpcId
+        vpcCidr: !Ref 'vpcCidr'
+  Network:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub
+        - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/network/network.yaml'
+        - S3Region: !Ref 's3BucketRegion'
+          S3Bucket: !Ref 's3BucketName'
+      Parameters:
+        cost: !Ref 'cost'
+        environment: !Ref 'environment'
+        group: !Ref 'group'
+        owner: !Ref 'owner'
+        numAzs: !Ref 'numAzs'
+        numSubnets: 2
+        setPublicSubnet1: !Ref 'provisionPublicIp'
+        subnetMask: !Ref 'subnetMask'
+        uniqueString: !Ref 'uniqueString'
+        vpcCidr: !Ref 'vpcCidr'
+        vpcTenancy: default
+
+  NAPAutoScale:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub
+        - 'https://${S3Bucket}.s3.${S3Region}.amazonaws.com/${artifactLocation}modules/nap-autoscale/nap-autoscale-ubuntu-18.04.yaml'
+        - S3Region: !Ref 's3BucketRegion'
+          S3Bucket: !Ref 's3BucketName'
+      Parameters:
+        cost: !Ref 'cost'
+        environment: !Ref 'environment'
+        group: !Ref 'group'
+        owner: !Ref 'owner'
+        externalTargetGroupHttp: !GetAtt Dag.Outputs.externalTargetGroupHttp
+        # TODO: ubuntu 18.04 us-east-1
+        imageId: ami-0f58d396d72867d57
+        instanceType: 't3.small'
+        provisionPublicIp: !Ref 'provisionPublicIp'
+        scalingMaxSize: !Ref 'napScalingMaxSize'
+        scalingMinSize: !Ref 'napScalingMinSize'
+        sshKey: !Ref 'sshKey'
+        subnets: !Join
+          - ','
+          - - !Select
+              - '1'
+              - !Split
+                - ','
+                - !GetAtt
+                  - Network
+                  - Outputs.subnetsA
+            - !If 
+              - az2
+              - !Select
+                - '1'
+                - !Split
+                  - ','
+                  - !GetAtt Network.Outputs.subnetsB 
+              - !Ref 'AWS::NoValue'
+            - !If 
+              - az3
+              - !Select
+                - '1'
+                - !Split
+                  - ','
+                  - !GetAtt Network.Outputs.subnetsC
+              - !Ref 'AWS::NoValue'
+            - !If 
+              - az4
+              - !Select
+                - '1'
+                - !Split
+                  - ','
+                  - !GetAtt Network.Outputs.subnetsD
+              - !Ref 'AWS::NoValue'                                
+        napExternalSecurityGroup: !GetAtt Dag.Outputs.externalSecurityGroup
+        logGroupName: !Sub '${uniqueString}-log-group'
+        uniqueString: !Ref 'uniqueString'

@@ -1,0 +1,562 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  You will be billed for the AWS resources used
+  if you create a stack from this template. QS(0027)
+# Conditions:
+Metadata:
+# TODO: add metadata
+  Version: 1.0.0  
+Outputs:
+  stackName:
+    Description: dag nested stack name
+    Value: !Ref "AWS::StackName"
+  codeDeployApplication:
+    Description: Code Deploy Application name
+    Value: !Ref codeDeployApplication
+  codeBuildArn: 
+    Description: Code Build Arn
+    Value: !GetAtt codeBuild.Arn
+  codeCommitRepositoryName: 
+    Description: Code Commit Repository Name
+    Value: !GetAtt codeCommitRepository.Name
+  codeDeployDeploymentGroup: 
+    Description: Deployment Group
+    Value: !Ref codeDeployDeploymentGroup
+  codeBuildArtifactsBucket: 
+    Description: Build Artifacts
+    Value: !Ref codeBuildArtifacts
+Parameters:
+  cost:
+    Default: f5cost
+    Description: Cost Center Tag.
+    Type: String
+  environment:
+    Default: f5env
+    Description: Environment Tag.
+    Type: String
+  group:
+    Default: f5group
+    Description: Group Tag.
+    Type: String
+  owner:
+    Default: f5owner
+    Description: Owner Tag.
+    Type: String
+  uniqueString:
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9]{1,11}$
+    ConstraintDescription: Must Contain between 1 and 12 alphanumeric characters with first character as a letter.
+    Default: myUniqStr
+    Description: Unique String used when creating object names or Tags.
+    Type: String
+
+  targetGroupName:
+    Default: ''
+    Description: Auto Scaling Target Group Name
+    Type: String
+  autoScalingGroupList:
+    Description: Auto Scaling Groups
+    Type: List<String>
+
+  # codeBuildRoleArn:
+  #   Default: ''
+  #   Description: Code Build Role Arn.
+  #   Type: String  
+  # codeDeployRoleArn:
+  #   Default: ''
+  #   Description: Code Deploy Role Arn.
+  #   Type: String   
+  # pipelineRoleArn:
+  #   Default: ''
+  #   Description: Pipeline Role Arn.
+  #   Type: String
+  # cleanupBucketRoleArn:
+  #   Default: ''
+  #   Description: Cleanup S3 Bucket Role Arn.
+  #   Type: String
+  initialRepositoryS3Bucket:
+    Default: 'aws-waf-solution-template'
+    Description: Initial Repository Bucket
+    Type: String 
+  initialRepositoryS3Key:
+    Default: 'release/latest/initial_repo/initial_repo.zip'
+    Description: Initial Repository Key
+    Type: String
+  instanceIAMRole:
+    Default: ''
+    Description: Initial Repository Bucket
+    Type: String 
+
+Resources:
+  codeCommitRepository:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Sub '${uniqueString}-repository'
+      RepositoryDescription: This is a repository for pipeline configuration.
+      Code:
+        BranchName: main
+        S3:
+          Bucket: !Ref initialRepositoryS3Bucket
+          Key: !Ref initialRepositoryS3Key
+      Tags:
+        - Key: costcenter
+          Value: !Ref 'cost'
+        - Key: environment
+          Value: !Ref 'environment'
+        - Key: group
+          Value: !Ref 'group'
+        - Key: Name
+          Value:  !Sub '${uniqueString}-repository'
+        - Key: owner
+          Value: !Ref 'owner'          
+  codeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      # TODO: add description
+      Description: Build config
+      ServiceRole: !GetAtt codeBuildRole.Arn
+      Artifacts:
+        Location: !Ref codeBuildArtifacts
+        Name: "nginx-config.zip"
+        NamespaceType: BUILD_ID
+        Packaging: ZIP
+        Path: "codebuild"
+        Type: S3
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+      Source:
+        Location: !GetAtt codeCommitRepository.CloneUrlHttp
+        Type: CODECOMMIT
+      LogsConfig:
+        # TODO: Add cloudwatch or S3 logs
+        CloudWatchLogs:
+          Status: DISABLED
+      TimeoutInMinutes: 10
+      Tags:
+        - Key: costcenter
+          Value: !Ref 'cost'
+        - Key: environment
+          Value: !Ref 'environment'
+        - Key: group
+          Value: !Ref 'group'
+        - Key: Name
+          Value:  !Sub '${uniqueString}-codebuid'
+        - Key: owner
+          Value: !Ref 'owner'
+
+  codeBuildArtifacts:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      Tags:
+        - Key: costcenter
+          Value: !Ref 'cost'
+        - Key: environment
+          Value: !Ref 'environment'
+        - Key: group
+          Value: !Ref 'group'
+        - Key: Name
+          Value:  !Sub '${uniqueString}-codebuild-artifacts'
+        - Key: owner
+          Value: !Ref 'owner'
+      VersioningConfiguration:
+        Status: Enabled                      
+  cleanupBucketOnDeleteFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code: 
+        ZipFile: |
+          import json, boto3, logging
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              logger.info("event: {}".format(event))
+              try:
+                  bucket = event['ResourceProperties']['BucketName']
+                  logger.info("bucket: {}, event['RequestType']: {}".format(bucket,event['RequestType']))
+                  if event['RequestType'] == 'Delete':
+                      s3 = boto3.resource('s3')
+                      bucket = s3.Bucket(bucket)
+                      for obj in bucket.objects.filter():
+                          logger.info("delete obj: {}".format(obj))
+                          s3.Object(bucket.name, obj.key).delete()
+                      bucket.object_versions.all().delete()
+                  sendResponseCfn(event, context, cfnresponse.SUCCESS)
+              except Exception as e:
+                  logger.info("Exception: {}".format(e))
+                  sendResponseCfn(event, context, cfnresponse.FAILED)
+
+          def sendResponseCfn(event, context, responseStatus):
+              responseData = {}
+              responseData['Data'] = {}
+              cfnresponse.send(event, context, responseStatus, responseData, "CustomResourcePhysicalID")              
+
+      Handler: "index.lambda_handler"
+      Runtime: python3.7
+      MemorySize: 128
+      Timeout: 60
+      Role: !GetAtt cleanupBucketRole.Arn
+  cleanupBucketOnDelete:
+    Type: Custom::cleanupbucket
+    Properties:
+      ServiceToken: !GetAtt cleanupBucketOnDeleteFunction.Arn
+      BucketName: !Ref codeBuildArtifacts      
+  codeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub '${AWS::StackName}-AppProtectApp'      
+      ComputePlatform: Server
+  codeDeployDeploymentConfig:
+    Type: AWS::CodeDeploy::DeploymentConfig
+    Properties:
+      DeploymentConfigName: !Sub '${AWS::StackName}-AppProtectConfig'
+      MinimumHealthyHosts:
+        Type: FLEET_PERCENT
+        Value: 50
+
+  # TODO: adjust for standalone EC2
+  codeDeployDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      DeploymentConfigName: !Ref codeDeployDeploymentConfig
+      ApplicationName: !Ref codeDeployApplication
+      DeploymentGroupName: !Sub '${AWS::StackName}-AppProtect'    
+      LoadBalancerInfo:
+        TargetGroupInfoList: 
+          - Name: !Ref targetGroupName
+      DeploymentStyle:
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      ServiceRoleArn: !GetAtt codeDeployRole.Arn
+      AutoScalingGroups: !Ref autoScalingGroupList
+  codePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub '${AWS::StackName}-codePipeline'
+      RoleArn: !GetAtt pipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: "1"
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !GetAtt codeCommitRepository.Name
+                BranchName: main
+                PollForSourceChanges: true
+              InputArtifacts: []
+              OutputArtifacts:
+                - Name: !Sub '${AWS::StackName}-SourceArtifact'
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref codeBuild
+              InputArtifacts:
+                - Name: !Sub '${AWS::StackName}-SourceArtifact'
+              OutputArtifacts:
+                - Name: !Sub '${AWS::StackName}-BuildArtifact'
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: DeployAction
+              InputArtifacts:
+                - Name: !Sub '${AWS::StackName}-BuildArtifact'
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: "1"
+                Provider: CodeDeploy
+              Configuration:
+                ApplicationName: !Ref codeDeployApplication
+                DeploymentGroupName: !Ref codeDeployDeploymentGroup
+              RunOrder: 1
+      ArtifactStore:
+        Type: S3
+        Location: !Ref codeBuildArtifacts
+
+  codeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+        Version: "2012-10-17"
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${uniqueString}-code-build-policy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - s3:List*
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ""
+                    - - "arn:aws:s3:::"
+                      - !Ref codeBuildArtifacts
+                  - !Join
+                    - ""
+                    - - "arn:aws:s3:::"
+                      - !Ref codeBuildArtifacts
+                      - /*
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref uniqueString
+              - '-code-build-role'
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: owner
+          Value: !Ref owner   
+  codeDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${uniqueString}-code-deploy-policy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - autoscaling:CompleteLifecycleAction
+                  - autoscaling:DeleteLifecycleHook
+                  - autoscaling:PutLifecycleHook
+                  - autoscaling:RecordLifecycleActionHeartbeat
+                Effect: Allow
+                Resource: !Join
+                  - ":"
+                  - - arn
+                    - aws
+                    - autoscaling
+                    - !Ref "AWS::Region"
+                    - !Ref "AWS::AccountId"
+                    - autoScalingGroup
+                    - "*"
+                    # TODO: now working on stack create
+                    # - !Join
+                    #   - '/'
+                    #   - - autoScalingGroupName
+                    #     - !Ref 'AppProtectASG'
+              - Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:DescribeLifecycleHooks
+                  # TODO: check resource permissions
+                  - elasticloadbalancing:RegisterTargets
+                  - elasticloadbalancing:DeregisterTargets
+                  - elasticloadbalancing:Describe*
+                Effect: Allow
+                Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref uniqueString
+              - '-code-deploy-role'
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: owner
+          Value: !Ref owner                
+  pipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${uniqueString}-pipeline-policy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - codecommit
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - !GetAtt codeCommitRepository.Name
+              - Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StopBuild
+                Effect: Allow
+                Resource:
+                  - !GetAtt codeBuild.Arn
+              - Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplicationRevision
+                  - codedeploy:GetDeployment
+                  - codedeploy:GetDeploymentConfig
+                  - codedeploy:RegisterApplicationRevision
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - deploymentgroup
+                      - !Join
+                        - "/"
+                        - - !Ref codeDeployApplication
+                          - !Ref 'codeDeployDeploymentGroup'
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - application
+                      - !Ref codeDeployApplication
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - deploymentconfig
+                      - "*"
+              - Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:s3:::${codeBuildArtifacts}'
+                  - !Sub 'arn:aws:s3:::${codeBuildArtifacts}/*'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref uniqueString
+              - '-pipeline-role'
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: owner
+          Value: !Ref owner
+
+  cleanupBucketRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${uniqueString}-cleanup-policy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:s3:::${codeBuildArtifacts}'
+                  - !Sub 'arn:aws:s3:::${codeBuildArtifacts}/*'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref uniqueString
+              - '-cleanup-role'
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: owner
+          Value: !Ref owner
+
+  codeBuildPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      Roles:
+        - !Ref instanceIAMRole
+      PolicyName: !Sub '${uniqueString}-ec2-policy'
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:GetBucketVersioning
+            Effect: Allow
+            Resource:
+                  - !Sub 'arn:aws:s3:::${codeBuildArtifacts}'
+                  - !Sub 'arn:aws:s3:::${codeBuildArtifacts}/*'
