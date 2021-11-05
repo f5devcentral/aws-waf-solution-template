@@ -1,0 +1,9 @@
+<html>
+<body>
+
+<h1>Welcome to F5 Networks</h1>
+
+<p>Verifying static html page with Nginx App Protect CFT</p>
+
+</body>
+</html>

@@ -1,0 +1,49 @@
+name: Cloud Formation Template Static Page verification
+
+on:
+  push: {branches: master}
+  pull_request: {branches: master} 
+  
+jobs:
+  cft-basic_page_chk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+      - name: Install Dependencies
+        run: |
+          python -m pip install --user boto3
+          python -m pip install --user requests
+          pip install git-remote-codecommit
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{secrets.AWS_ACCESS_KEY_ID}}
+          aws-secret-access-key: ${{secrets.AWS_SECRET_ACCESS_KEY}}
+          aws-session-token: ${{secrets.AWS_SESSION_TOKEN}}
+          aws-region: ${{secrets.AWS_REGION}}
+      - name: Create Stack
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: ${{secrets.STACK_NAME}}
+          template: ${{secrets.Template_Name}}
+          capabilities: CAPABILITY_NAMED_IAM
+      - name: Customize the stack for static page verification
+        run: |
+          git clone codecommit://CFT-NAP-TEST-AppProtectRepo local-dir
+          cd local-dir
+          pwd
+          cp  $PWD/scripts/appspec.yml $PWD/
+          git config --global user.email ${{secrets.USER_NAME}}
+          git config --global user.name "GitHub Action test"
+          git add .
+          git commit -m "Configuration for static page verification"
+          git push -u origin master
+      - name: Sleep for a while untill the pipeline completes
+        run: sleep 23m
+        shell: bash
+      - name: Verify Stack Static Page
+        run: |
+          python scripts/pipeline/verify_cft_nap.py static
+        env:
+          STACK_NAME: ${{secrets.STACK_NAME}}
