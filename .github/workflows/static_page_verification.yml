@@ -47,3 +47,8 @@ jobs:
           python scripts/pipeline/verify_cft_nap.py static
         env:
           STACK_NAME: ${{secrets.STACK_NAME}}
+      - name: Delete Stack
+        run:
+          python scripts/pipeline/delete_stack.py 
+        env:
+          STACK_NAME: ${{secrets.STACK_NAME}}
