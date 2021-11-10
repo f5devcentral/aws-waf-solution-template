@@ -1,0 +1,29 @@
+name: Upload Dev Artifacts To AWS S3
+on: [push]
+
+jobs:
+  upload-dev-artifacts-to-aws-s3:
+    runs-on: ubuntu-latest
+    env:
+      AWS_S3_ARTIFACTS_BUCKET: "aws-waf-solution-template"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Zip initial_repo folders
+        run: |
+          find ./modules/ -type d -iname initial_repo -exec sh -c 'cd $0 ; zip -r ../initial_repo.zip . *' {} \;
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload files to S3
+        run: |
+          aws s3 sync ./modules/ s3://${{ env.AWS_S3_ARTIFACTS_BUCKET }}/dev/${{ github.sha }}/modules/ \
+            --acl public-read \
+            --exclude "*/initial_repo/*"
+          echo "https://${{ env.AWS_S3_ARTIFACTS_BUCKET }}.s3.amazonaws.com/dev/${{ github.sha }}/modules/"

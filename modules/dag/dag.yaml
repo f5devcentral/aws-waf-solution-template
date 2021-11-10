@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  DAG/Ingress Template is intended to deploy Load Balancers, Public Ip addresses
+  for Cloud Solutions (i.e. High-Availability or Autoscale). 
+  **WARNING** This template creates AWS resources. 
+  You will be billed for the AWS resources used
+  if you create a stack from this template. QS(0027)
+Conditions:
+  createExternalPublicIP01: !Or
+    - !Equals
+      - '1'
+      - !Ref numberPublicExternalIpAddresses
+    - !Condition createExternalPublicIP02
+  createExternalPublicIP02: !Or
+    - !Equals
+      - '2'
+      - !Ref numberPublicExternalIpAddresses
+    - !Condition createExternalPublicIP03
+  createExternalPublicIP03: !Or
+    - !Equals
+      - '3'
+      - !Ref numberPublicExternalIpAddresses
+    - !Condition createExternalPublicIP04
+  createExternalPublicIP04: !Equals
+    - '4'
+    - !Ref numberPublicExternalIpAddresses
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - vpc
+          - vpcCidr
+          - externalSubnets
+          - numberPublicExternalIpAddresses
+      - Label:
+          default: Resource Tags
+        Parameters:
+          - cost
+          - environment
+          - group
+          - owner
+          - uniqueString
+    ParameterLabels:
+      externalSubnets:
+        default: External subnets
+      vpcCidr:
+        default: VPC CIDR
+      vpc:
+        default: VPC ID
+      numberPublicExternalIpAddresses:
+        default: Number of Public IPs
+      cost:
+        default: Cost
+      environment:
+        default: Environment
+      group:
+        default: Group
+      owner:
+        default: Owner
+      uniqueString:
+        default: Unique String
+  Version: 1.0.0    
+Outputs:
+  stackName:
+    Description: dag nested stack name
+    Value: !Ref 'AWS::StackName'
+  externalElasticLoadBalancer:
+    Description: Elastic Load Balancer
+    Value: !Ref ExternalLoadBalancer
+  externalElasticLoadBalancerDnsName:
+    Description: Elastic Load Balancer
+    Value: !GetAtt ExternalLoadBalancer.DNSName
+  externalElasticLoadBalancerFullName:
+    Description: Elastic Load Balancer
+    Value: !GetAtt ExternalLoadBalancer.LoadBalancerFullName
+  externalTargetGroupHttp:
+    Description: Elastic Load Balancer Target Group
+    Value: !Ref ExternalTargetGroupHttp
+  externalTargetGroupHttpName:
+    Description: Elastic Load Balancer Target Group Name
+    Value: !GetAtt ExternalTargetGroupHttp.TargetGroupName
+  externalTargetGroupHttpFullName:
+    Description: Elastic Load Balancer Target Group Name
+    Value: !GetAtt ExternalTargetGroupHttp.TargetGroupFullName    
+  externalEipAddress01:
+    Description: Elastic IP 01 for External Interface
+    Condition: createExternalPublicIP01
+    Value: !Ref ExternalEipAddress01
+  externalEipAllocationId01:
+    Description: Allocation Id for Elastic IP 01 for External Interface
+    Condition: createExternalPublicIP01
+    Value: !GetAtt ExternalEipAddress01.AllocationId
+  externalEipAddress02:
+    Description: Elastic IP 02 for External Interface
+    Condition: createExternalPublicIP02
+    Value: !Ref ExternalEipAddress02
+  externalEipAllocationId02:
+    Description: Allocation Id for Elastic IP 02 for External Interface
+    Condition: createExternalPublicIP02
+    Value: !GetAtt ExternalEipAddress02.AllocationId
+  externalEipAddress03:
+    Description: Elastic IP 03 for External Interface
+    Condition: createExternalPublicIP03
+    Value: !Ref ExternalEipAddress03
+  externalEipAllocationId03:
+    Description: Allocation Id for Elastic IP 03 for External Interface
+    Condition: createExternalPublicIP03
+    Value: !GetAtt ExternalEipAddress03.AllocationId
+  externalEipAddress04:
+    Description: Elastic IP 04 for External Interface
+    Condition: createExternalPublicIP04
+    Value: !Ref ExternalEipAddress04
+  externalEipAllocationId04:
+    Description: Allocation Id for Elastic IP 04 for External Interface
+    Condition: createExternalPublicIP04
+    Value: !GetAtt ExternalEipAddress04.AllocationId
+  externalSecurityGroup:
+    Description: Security Group (External or Public)
+    Value: !Ref ExternalSecurityGroup    
+Parameters:
+  externalSubnets:
+    ConstraintDescription: The subnet IDs must be within an existing VPC
+    Description: REQUIRED - Public or external subnets for the availability zones.
+    Type: List<AWS::EC2::Subnet::Id>
+  vpcCidr:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC.
+    Type: String
+  vpc:
+    Description: REQUIRED - VPC ID.
+    Type: AWS::EC2::VPC::Id
+  numberPublicExternalIpAddresses:
+    Default: 0
+    Description: Number of external public ip address to create.
+    MaxValue: 4
+    MinValue: 0
+    Type: Number
+  cost:
+    Default: f5cost
+    Description: Cost Center Tag.
+    Type: String
+  environment:
+    Default: f5env
+    Description: Environment Tag.
+    Type: String
+  group:
+    Default: f5group
+    Description: Group Tag.
+    Type: String
+  owner:
+    Default: f5owner
+    Description: Owner Tag.
+    Type: String
+  uniqueString:
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9]{1,11}$
+    ConstraintDescription: Must Contain between 1 and 12 alphanumeric characters with first character as a letter.
+    Default: myUniqStr
+    Description: Unique String used when creating object names or Tags.
+    Type: String
+Resources:
+  ExternalLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${uniqueString}-external-lb'
+      Scheme: internet-facing
+      Subnets: !Ref externalSubnets
+      Type: network
+      Tags:
+        - Key: Name
+          Value:  !Sub '${uniqueString}-external-lb'
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: owner
+          Value: !Ref owner
+  ExternalLBListenerHttp:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ExternalLoadBalancer
+      Port: 80
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ExternalTargetGroupHttp
+  ExternalTargetGroupHttp:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${uniqueString}-health-tcp'
+      HealthCheckEnabled: true
+      HealthCheckPort: '81'
+      HealthCheckProtocol: TCP
+      HealthyThresholdCount: 2
+      HealthCheckTimeoutSeconds: 10
+      HealthCheckIntervalSeconds: 10
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref vpc
+      TargetType: instance
+      Port: 80
+      Protocol: TCP
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds
+        Value: '20'
+      - Key: stickiness.enabled
+        Value: 'true'
+      - Key: stickiness.type
+        Value: 'source_ip'
+  ExternalEipAddress01:
+    Type: AWS::EC2::EIP
+    Condition: createExternalPublicIP01
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: Name
+          Value: !Sub '${uniqueString}-ext-eip-01'
+        - Key: owner
+          Value: !Ref owner
+  ExternalEipAddress02:
+    Type: AWS::EC2::EIP
+    Condition: createExternalPublicIP02
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: Name
+          Value: !Sub '${uniqueString}-ext-eip-02'
+        - Key: owner
+          Value: !Ref owner
+  ExternalEipAddress03:
+    Type: AWS::EC2::EIP
+    Condition: createExternalPublicIP03
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: Name
+          Value: !Sub '${uniqueString}-ext-eip-03'
+        - Key: owner
+          Value: !Ref owner
+  ExternalEipAddress04:
+    Type: AWS::EC2::EIP
+    Condition: createExternalPublicIP04
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: Name
+          Value: !Sub '${uniqueString}-ext-eip-04'
+        - Key: owner
+          Value: !Ref owner
+  ExternalSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Public or External interface rules'
+      VpcId: !Ref vpc
+      SecurityGroupIngress:
+        - Description: Allow HTTP
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: Allow HTTP
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: ::/0
+        - Description: Allow HTTPS
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: Allow HTTPS
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: ::/0
+        - Description: Allow Healthcheck
+          IpProtocol: tcp
+          FromPort: 81
+          ToPort: 81
+          CidrIp: !Ref vpcCidr
+      Tags:
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: Name
+          Value: !Sub '${uniqueString}-external-sg'
+        - Key: owner
+          Value: !Ref owner          
