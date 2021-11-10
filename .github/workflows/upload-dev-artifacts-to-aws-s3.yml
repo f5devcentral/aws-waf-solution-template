@@ -10,9 +10,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Zip initial_repo folder
+      - name: Zip initial_repo folders
         run: |
-          cd ./initial_repo/ ; zip -r ../initial_repo.zip . * ;
+          find ./modules/ -type d -iname initial_repo -exec sh -c 'cd $0 ; zip -r ../initial_repo.zip . *' {} \;
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -23,7 +23,7 @@ jobs:
 
       - name: Upload files to S3
         run: |
-          aws s3 cp ./initial_repo.zip s3://${{ env.AWS_S3_ARTIFACTS_BUCKET }}/dev/${{ github.sha }}/initial_repo/ --acl public-read
-          aws s3 sync ./templates/ s3://${{ env.AWS_S3_ARTIFACTS_BUCKET }}/dev/${{ github.sha }}/templates/ --acl public-read
-          echo "https://${{ env.AWS_S3_ARTIFACTS_BUCKET }}.s3.amazonaws.com/dev/${{ github.sha }}/initial_repo/initial_repo.zip"
-          echo "https://${{ env.AWS_S3_ARTIFACTS_BUCKET }}.s3.amazonaws.com/dev/${{ github.sha }}/templates/--templatename--.yaml"
+          aws s3 sync ./modules/ s3://${{ env.AWS_S3_ARTIFACTS_BUCKET }}/dev/${{ github.sha }}/modules/ \
+            --acl public-read \
+            --exclude "*/initial_repo/*"
+          echo "https://${{ env.AWS_S3_ARTIFACTS_BUCKET }}.s3.amazonaws.com/dev/${{ github.sha }}/modules/"
