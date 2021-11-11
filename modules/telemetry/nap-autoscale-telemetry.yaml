@@ -47,13 +47,13 @@ Metadata:
 Outputs:
   stackName:
     Description: Telemetry nested stack name
-    Value: !Ref 'AWS::StackName'
+    Value: !Ref AWS::StackName
   dashboardName:
     Description: Dashboard name
-    Value: !Ref 'AppProtectDashboard'
+    Value: !Ref NapDashboard
   logGroupName:
     Description: Log Group name
-    Value: !Ref 'logGroup'
+    Value: !Ref LogGroup
 Parameters:
   instanceIAMRole:
     Default: ''
@@ -86,7 +86,7 @@ Parameters:
     Description: Unique String used when creating object names or Tags.
     Type: String
 Resources:
-  logGroup:
+  LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !If 
@@ -94,7 +94,7 @@ Resources:
         - !Sub '${uniqueString}-log-group'
         - !Ref logGroupName
       RetentionInDays: !Ref logRetentionInDays
-  AppProtectDashboard:
+  NapDashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
       DashboardName: !Sub '${uniqueString}-dashboard'
@@ -108,11 +108,11 @@ Resources:
               "x": 3,
               "type": "log",
               "properties": {
-                "query": "SOURCE \"${logGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"request_status=\\\"alerted\\\"\" as alerted_requests\n| parse @message \"request_status=\\\"blocked\\\"\" as blocked_requests\n| parse @message \"request_status=\\\"passed\\\"\" as passed_requests\n| sort @timestamp desc\n| stats count(alerted_requests) as alerted, count(blocked_requests) as blocked, count(passed_requests) as passed by bin(5m)",
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"request_status=\\\"alerted\\\"\" as alerted_requests\n| parse @message \"request_status=\\\"blocked\\\"\" as blocked_requests\n| parse @message \"request_status=\\\"passed\\\"\" as passed_requests\n| sort @timestamp desc\n| stats count(alerted_requests) as alerted, count(blocked_requests) as blocked, count(passed_requests) as passed by bin(5m)",
                 "region": "${AWS::Region}",
                 "stacked": true,
                 "view": "timeSeries",
-                "title": "AppProtect Requests"
+                "title": "NAP Requests"
               }
             },
             {
@@ -122,7 +122,7 @@ Resources:
               "x": 18,
               "type": "log",
               "properties": {
-                "query": "SOURCE \"${logGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message /request_status=\"(?<request_status>.*?)\"/\n| sort @timestamp desc\n| stats count(*) as requests by request_status",
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message /request_status=\"(?<request_status>.*?)\"/\n| sort @timestamp desc\n| stats count(*) as requests by request_status",
                 "region": "${AWS::Region}",
                 "stacked": false,
                 "view": "pie",
@@ -182,7 +182,7 @@ Resources:
               "x": 0,
               "type": "log",
               "properties": {
-                "query": "SOURCE \"${logGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /attack_type=\\\"(?<attack_type>.*?)\\\",(?<part1>.*?),ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",(?<part3>.*?),sub_violations=\\\"(?<sub_violations>.*?)\\\",support_id=\\\"(?<support_id>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| display @timestamp, request_status, attack_type, ip_client, sub_violations, support_id\n| sort @timestamp desc\n| limit 20",
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /attack_type=\\\"(?<attack_type>.*?)\\\",(?<part1>.*?),ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",(?<part3>.*?),sub_violations=\\\"(?<sub_violations>.*?)\\\",support_id=\\\"(?<support_id>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| display @timestamp, request_status, attack_type, ip_client, sub_violations, support_id\n| sort @timestamp desc\n| limit 20",
                 "region": "${AWS::Region}",
                 "stacked": false,
                 "view": "table",
@@ -238,7 +238,7 @@ Resources:
               "width": 6,
               "height": 6,
               "properties": {
-                "query": "SOURCE \"${logGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"response_code=\\\"*\\\"\" as response_code\n| filter response_code > 0\n| stats count(response_code) as code by response_code",
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"response_code=\\\"*\\\"\" as response_code\n| filter response_code > 0\n| stats count(response_code) as code by response_code",
                 "region": "${AWS::Region}",
                 "stacked": false,
                 "title": "Response Codes",
@@ -252,7 +252,7 @@ Resources:
               "width": 6,
               "height": 6,
               "properties": {
-                "query": "SOURCE \"${logGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| stats count(ip_client) as count by ip_client as ip\n| sort count desc\n| limit 10",
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| stats count(ip_client) as count by ip_client as ip\n| sort count desc\n| limit 10",
                 "region": "${AWS::Region}",
                 "stacked": false,
                 "title": "Top Attackers",
@@ -261,7 +261,7 @@ Resources:
             }
           ]
         }
-  logsPolicy:
+  LogsPolicy:
     Type: 'AWS::IAM::Policy'
     Properties:
       Roles:
@@ -286,7 +286,7 @@ Resources:
                       - !Ref "AWS::Region"
                       - !Ref "AWS::AccountId"
                       - log-group
-                      - !Ref logGroup
+                      - !Ref LogGroup
                       - "*"
               - Action:
                   - "cloudwatch:PutMetricData"
