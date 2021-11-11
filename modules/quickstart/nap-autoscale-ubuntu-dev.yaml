@@ -45,6 +45,11 @@ Metadata:
           - group
           - owner
           - uniqueString
+      - Label:
+          default: Modules folder
+        Parameters:
+          - s3ModulesBucketName
+          - s3ModulesPath
     ParameterLabels:
       sshKey:
         default: SSH Key
@@ -72,8 +77,10 @@ Metadata:
         default: Owner
       uniqueString:
         default: Unique String
-      modulesLocation:
-        default: Modules Location
+      s3ModulesBucketName:
+        default: S3 Modules Bucket Name
+      s3ModulesPath:
+        default: S3 Modules Path
   Version: 1.0.0
 Mappings:
   amiRegionMap:
@@ -169,11 +176,20 @@ Parameters:
     MaxValue: 99
     MinValue: 1
     Type: Number
-  modulesLocation:
+  s3ModulesBucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    ConstraintDescription: 'S3 bucket name can include numbers, lowercase letters,
+      uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).'
+    Description: 'REQUIRED - S3 bucket name for the modules. S3 bucket name can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).'
+    Default: aws-waf-solution-template
+    Type: String
+  s3ModulesPath:
     AllowedPattern: ^.*[a-zA-Z]+/$
     ConstraintDescription: key prefix can include numbers, lowercase letters, uppercase
       letters, hyphens (-), and forward slash (/).
-    Default: https://aws-waf-solution-template.s3.amazonaws.com/release/latest/modules/
+    Default: release/latest/modules/
     Description: The path in the S3Bucket where the modules folder is located. Can
       include numbers, lowercase letters, uppercase letters, hyphens (-), and forward
       slash (/).
@@ -220,7 +236,7 @@ Resources:
   Pipeline:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub '${modulesLocation}pipeline/pipeline.yaml'
+      TemplateURL: !Sub 'https://${s3ModulesBucketName}.s3.amazonaws.com/${s3ModulesPath}pipeline/pipeline.yaml'
       Parameters:
         cost: !Ref cost
         environment: !Ref environment
@@ -228,18 +244,16 @@ Resources:
         owner: !Ref owner
         instanceIAMRole: !GetAtt NAPAutoScale.Outputs.napIAMRole
         targetGroupName: !GetAtt Dag.Outputs.externalTargetGroupHttpName
+        initialRepositoryS3Bucket: !Ref s3ModulesBucketName
+        initialRepositoryS3Key: !Sub '${s3ModulesPath}autoscale/nginx-app-protect-ubuntu-18.04/initial_repo.zip'
         autoScalingGroupList: !Join
           - ','
           - - !GetAtt NAPAutoScale.Outputs.autoScalingGroup
   Telemetry:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub '${modulesLocation}telemetry/nap-autoscale-telemetry.yaml'
+      TemplateURL: !Sub 'https://${s3ModulesBucketName}.s3.amazonaws.com/${s3ModulesPath}telemetry/nap-autoscale-telemetry.yaml'
       Parameters:
-        cost: !Ref cost
-        environment: !Ref environment
-        group: !Ref group
-        owner: !Ref owner
         instanceIAMRole: !GetAtt NAPAutoScale.Outputs.napIAMRole
         logGroupName: !Sub '${uniqueString}-log-group'
         autoScalingGroup: !GetAtt NAPAutoScale.Outputs.autoScalingGroup
@@ -248,11 +262,12 @@ Resources:
   Dag:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub '${modulesLocation}dag/dag.yaml'
+      TemplateURL: !Sub 'https://${s3ModulesBucketName}.s3.amazonaws.com/${s3ModulesPath}dag/dag.yaml'
       Parameters:
         cost: !Ref cost
         environment: !Ref environment
         group: !Ref group
+        owner: !Ref owner
         externalSubnets: !Join
           - ','
           - - !Select
@@ -291,7 +306,7 @@ Resources:
   Network:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub '${modulesLocation}network/network.yaml'
+      TemplateURL: !Sub 'https://${s3ModulesBucketName}.s3.amazonaws.com/${s3ModulesPath}network/network.yaml'
       Parameters:
         cost: !Ref cost
         environment: !Ref environment
@@ -307,7 +322,7 @@ Resources:
   NAPAutoScale:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub '${modulesLocation}autoscale/nginx-app-protect-ubuntu-18.04/nap-autoscale.yaml'
+      TemplateURL: !Sub 'https://${s3ModulesBucketName}.s3.amazonaws.com/${s3ModulesPath}autoscale/nginx-app-protect-ubuntu-18.04/nap-autoscale.yaml'
       Parameters:
         cost: !Ref cost
         environment: !Ref environment
