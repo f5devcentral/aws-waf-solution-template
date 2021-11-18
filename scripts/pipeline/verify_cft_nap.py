@@ -6,7 +6,7 @@ import sys
 nginx_default_page="Welcome to nginx"
 nginx_static_page="Hello World"
 nginx_dynamic_page="Arcadia Finance"
-stack_name=os.environ['STACK_NAME']
+stack_name= "nap-cft-stack"
 page_type=sys.argv[1] 
 if page_type == "static":
   page_type = nginx_static_page

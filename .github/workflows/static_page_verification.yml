@@ -25,30 +25,28 @@ jobs:
       - name: Create Stack
         uses: aws-actions/aws-cloudformation-github-deploy@v1
         with:
-          name: ${{secrets.STACK_NAME}}
+          name: nap-cft-stack
           template: ${{secrets.Template_Name}}
           capabilities: CAPABILITY_NAMED_IAM
       - name: Customize the stack for static page verification
         run: |
-          git clone codecommit://CFT-NAP-TEST-AppProtectRepo local-dir
+          git clone codecommit::us-east-2://nap-cft-stack-AppProtectRepo local-dir
           cd local-dir
-          pwd
           cp  $PWD/scripts/appspec.yml $PWD/
-          git config --global user.email ${{secrets.USER_NAME}}
+          git config --global user.email "randomstr@github.com"
           git config --global user.name "GitHub Action test"
           git add .
           git commit -m "Configuration for static page verification"
           git push -u origin master
       - name: Sleep for a while untill the pipeline completes
         run: sleep 23m
-        shell: bash
+        shell: bash   
       - name: Verify Stack Static Page
         run: |
           python scripts/pipeline/verify_cft_nap.py static
         env:
-          STACK_NAME: ${{secrets.STACK_NAME}}
-      - name: Delete Stack
-        run:
-          python scripts/pipeline/delete_stack.py 
-        env:
-          STACK_NAME: ${{secrets.STACK_NAME}}
+          STACK_NAME: nap-cft-stack
+      - name: Delete the Stack
+        run: |
+          aws cloudformation delete-stack --stack-name nap-cft-stack
+        shell: bash
