@@ -1,0 +1,1095 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  This community template deploys complete WAF solution based on NGINX App Protect. Refer to solution's github for guidance.
+Metadata:
+  License: Apache-2.0
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "VPC Configuration"
+        Parameters:
+          - VpcCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+      - Label:
+          default: "Dataplane Configuration"
+        Parameters:
+          - NginxInstanceType
+          - NginxNodesMinSize
+          - NginxNodesMaxSize
+          - NginxNodesDesiredCapacity
+    ParameterLabels:
+      VpcCIDR:
+        default: "VPC CIDR"
+      PublicSubnet1CIDR:
+        default: "Public subnet 1 CIDR block (1 Availability Zone)"
+      PublicSubnet2CIDR:
+        default: "Public subnet 2 CIDR block (2 Availability Zone)"
+      PrivateSubnet1CIDR:
+        default: "Private subnet 1 CIDR block (1 Availability Zone)"
+      PrivateSubnet2CIDR:
+        default: "Private subnet 2 CIDR block (2 Availability Zone)"
+      NginxInstanceType:
+        default: "Dataplane VM Instance Type"
+      NginxNodesMinSize:
+        default: "Minimum dataplane nodes count"
+      NginxNodesMaxSize:
+        default: "Maximum dataplane nodes count"
+      NginxNodesDesiredCapacity:
+        default: "Desired dataplane nodes count"
+Parameters:
+  NginxNodesDesiredCapacity:
+    Default: "2"
+    Description: The desired capacity for the NGINX Auto Scaling group
+    Type: Number
+  NginxNodesMaxSize:
+    Default: "6"
+    Description: The maximum size of the NGINX Auto Scaling group
+    Type: Number
+  NginxNodesMinSize:
+    Default: "2"
+    Description: The minimum size of the NGINX Auto Scaling group
+    Type: Number
+  NginxInstanceType:
+    Description: Amazon EC2 instance type for the NGINX instances
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t3.nano
+      - t3.micro
+      - t3.small
+  VpcCIDR:
+    Description: VPC CIDR block
+    Type: String
+    Default: 10.192.0.0/16
+  PublicSubnet1CIDR:
+    Description: Public subnet 1 CIDR block (1 Availability Zone)
+    Type: String
+    Default: 10.192.10.0/24
+  PublicSubnet2CIDR:
+    Description: Public subnet 2 CIDR block (2 Availability Zone)
+    Type: String
+    Default: 10.192.20.0/24
+  PrivateSubnet1CIDR:
+    Description: Private subnet 1 CIDR block (1 Availability Zone)
+    Type: String
+    Default: 10.192.50.0/24
+  PrivateSubnet2CIDR:
+    Description: Private subnet 2 CIDR block (2 Availability Zone)
+    Type: String
+    Default: 10.192.60.0/24
+Mappings:
+  AWSAMIRegionMap:
+    ap-east-1:
+      UBUNTU1804DEV: ami-02cbed36dd3616a84
+    ap-northeast-1:
+      UBUNTU1804DEV: ami-0ec278cf695de326c
+    ap-northeast-2:
+      UBUNTU1804DEV: ami-0a32800963fa115bb
+    ap-northeast-3:
+      UBUNTU1804DEV: ami-0491c330c1b3e44c9
+    ap-south-1:
+      UBUNTU1804DEV: ami-0139359797b6e3cbb
+    ap-southeast-1:
+      UBUNTU1804DEV: ami-09f7be100fa49db35
+    ap-southeast-2:
+      UBUNTU1804DEV: ami-0def18da152bd01ef
+    ca-central-1:
+      UBUNTU1804DEV: ami-0c6eed9d2e970780a
+    eu-central-1:
+      UBUNTU1804DEV: ami-0e1d0cb0c1de0aaed
+    eu-west-1:
+      UBUNTU1804DEV: ami-0c3748a507e3e6af6
+    eu-west-2:
+      UBUNTU1804DEV: ami-0525f8e90a9ea0713
+    eu-west-3:
+      UBUNTU1804DEV: ami-0c60f7962a6f712ed
+    eu-north-1:
+      UBUNTU1804DEV: ami-09ff9e4279f34d409
+    sa-east-1:
+      UBUNTU1804DEV: ami-00eef560ede5acabe
+    us-east-1:
+      UBUNTU1804DEV: ami-0f58d396d72867d57
+    us-east-2:
+      UBUNTU1804DEV: ami-0b912107985ac7145
+    us-west-1:
+      UBUNTU1804DEV: ami-02f5b222247cd8471
+    us-west-2:
+      UBUNTU1804DEV: ami-0ead4783e8d139c88
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-VPC'
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-InternetGateway'
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicSubnet(AZ1)'
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicSubnet(AZ2)'
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicRoutes'
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicIP(AZ1)'
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PublicIP(AZ2)'      
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-NatGateway(AZ1)'
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-NatGateway(AZ2)'      
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PrivateRoutes(AZ1)'
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PrivateRoutes(AZ2)'
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PrivateSubnet(AZ1)'
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-PrivateSubnet(AZ2)'
+  AppProtectSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-AppProtect'
+      GroupDescription: Enables access to the Nginx App Protect
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - Description: Allow HTTP
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: Allow HTTP
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: ::/0
+        - Description: Allow HTTPS
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: Allow HTTPS
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIpv6: ::/0
+        - Description: Allow Healthcheck
+          IpProtocol: tcp
+          FromPort: 81
+          ToPort: 81
+          CidrIp: !Ref VpcCIDR      
+  AppProtectLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - 01_setupCfnHup
+            - 02_config-amazon-cloudwatch-agent
+            - 03_restart_amazon-cloudwatch-agent
+          UpdateEnvironment:
+            - 02_config-amazon-cloudwatch-agent
+            - 03_restart_amazon-cloudwatch-agent
+        02_config-amazon-cloudwatch-agent:
+          files:
+            ? "/opt/aws/amazon-cloudwatch-agent/bin/nginx-cloudwatch-agent-config.json"
+            : mode: "000400"
+              owner: root
+              group: root
+              content: !Sub |
+                {
+                  "metrics": {
+                    "append_dimensions": {
+                      "AutoScalingGroupName": "${!aws:AutoScalingGroupName}",
+                      "ImageId": "${!aws:ImageId}",
+                      "InstanceId": "${!aws:InstanceId}",
+                      "InstanceType": "${!aws:InstanceType}"
+                    },
+                    "metrics_collected": {
+                      "mem": {
+                        "measurement": [
+                          "mem_used_percent"
+                        ]
+                      },
+                      "swap": {
+                        "measurement": [
+                          "swap_used_percent"
+                        ]
+                      },
+                      "disk": {
+                        "measurement": [
+                          "disk_used_percent"
+                        ]
+                      },
+                      "net": {
+                        "measurement": [
+                          "net_bytes_recv",
+                          "net_bytes_sent"
+                        ]
+                      }
+                    }
+                  },
+                  "logs": {
+                    "logs_collected": {
+                      "files": {
+                        "collect_list": [
+                          {
+                            "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
+                            "log_group_name": "${AppProtectLogGroup}",
+                            "log_stream_name": "{instance_id}/amazon-cloudwatch-agent.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/nginx/access.log",
+                            "log_group_name": "${AppProtectLogGroup}",
+                            "log_stream_name": "{instance_id}/nginx_access.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/nginx/error.log",
+                            "log_group_name": "${AppProtectLogGroup}",
+                            "log_stream_name": "{instance_id}/nginx_error.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/syslog",
+                            "log_group_name": "${AppProtectLogGroup}",
+                            "log_stream_name": "{instance_id}/syslog",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/app_protect/security.log",
+                            "log_group_name": "${AppProtectLogGroup}",
+                            "log_stream_name": "{instance_id}/security.log",
+                            "timezone": "Local"
+                          }
+                        ]
+                      }
+                    },
+                    "log_stream_name": "${AppProtectLogGroup}",
+                    "force_flush_interval" : 15
+                  }
+                }
+        03_restart_amazon-cloudwatch-agent:
+          commands:
+            01_stop_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop
+            02_start_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/nginx-cloudwatch-agent-config.json -s
+        01_setupCfnHup:
+          files:
+            "/etc/cfn/cfn-hup.conf":
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+              mode: "000400"
+              owner: root
+              group: root
+            "/etc/cfn/hooks.d/amazon-cloudwatch-agent-auto-reloader.conf":
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.AppProtectLaunchConfig.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource AppProtectLaunchConfig --region ${AWS::Region} --configsets UpdateEnvironment
+                runas=root
+              mode: "000400"
+              owner: root
+              group: root
+            "/lib/systemd/system/cfn-hup.service":
+              content: |
+                [Unit]
+                Description=cfn-hup daemon
+                [Service]
+                Type=simple
+                ExecStart=/opt/aws/bin/cfn-hup
+                Restart=always
+                [Install]
+                WantedBy=multi-user.target
+          commands:
+            01enable_cfn_hup:
+              command: |
+                systemctl enable cfn-hup.service
+            02start_cfn_hup:
+              command: |
+                systemctl start cfn-hup.service
+    Properties: 
+      LaunchConfigurationName: !Sub '${AWS::StackName}-AppProtec'
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref "AWS::Region"
+        - UBUNTU1804DEV
+      InstanceType: !Ref "NginxInstanceType"
+      IamInstanceProfile: !Ref "AppProtectInstanceProfile"
+      SecurityGroups:
+        - !Ref "AppProtectSecurityGroup"
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash
+          sudo apt-get update -y
+          # Install cloudformation agent
+          apt-get install -y python-pip
+          apt-get install -y python-setuptools
+          mkdir -p /opt/aws/bin
+          python /usr/lib/python2.7/dist-packages/easy_install.py --script-dir /opt/aws/bin https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+
+          # Install cloudwatch agent
+          wget https://s3.amazonaws.com/amazoncloudwatch-agent/debian/amd64/latest/amazon-cloudwatch-agent.deb
+          sudo dpkg -i -E ./amazon-cloudwatch-agent.deb
+
+          # Start cfn-init
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource AppProtectLaunchConfig --configsets default --region ${AWS::Region}
+
+          # Install CodeDeploy Agent
+          sudo apt install ruby -y
+          wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install
+          chmod +x ./install
+          sudo ./install auto
+
+          # All done so signal success
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AppProtectASG --region ${AWS::Region}
+  AppProtectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '${AWS::StackName}-AppProtectLogGroup'
+      RetentionInDays: 7
+  AppProtectASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties: 
+      AutoScalingGroupName: !Sub '${AWS::StackName}-AppProtectASG'
+      Cooldown: "300"
+      MaxSize: !Ref "NginxNodesMaxSize"
+      MinSize: !Ref "NginxNodesMinSize"
+      DesiredCapacity: !Ref "NginxNodesDesiredCapacity"
+      HealthCheckGracePeriod: 300
+      HealthCheckType: EC2
+      AvailabilityZones:
+        - !Select [ 0, !GetAZs '' ]
+        - !Select [ 1, !GetAZs '' ]
+      VPCZoneIdentifier:
+        - !Ref "PrivateSubnet1"
+        - !Ref "PrivateSubnet2"
+      LaunchConfigurationName: !Ref "AppProtectLaunchConfig"
+      TargetGroupARNs:
+        - !Ref "AppProtectTargetGroup"
+      MetricsCollection:
+        - Granularity: 1Minute
+          Metrics:
+            - GroupMinSize
+            - GroupMaxSize
+            - GroupDesiredCapacity
+            - GroupInServiceInstances
+            - GroupTotalInstances
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-NginxAppProtect'
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: "2"
+        Timeout: PT30M
+  AppProtectLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${AWS::StackName}-AppProtectLB'
+      Scheme: internet-facing
+      Subnets: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Type: network
+      Tags:
+        - Key: Name
+          Value:  !Sub '${AWS::StackName}-AppProtectLB'
+  HttpLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AppProtectLB
+      Port: 80
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppProtectTargetGroup
+  AppProtectTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${AWS::StackName}-APTG'
+      HealthCheckEnabled: true
+      HealthCheckPort: "81"
+      HealthCheckProtocol: TCP
+      HealthyThresholdCount: 2
+      HealthCheckTimeoutSeconds: 10
+      HealthCheckIntervalSeconds: 10
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VPC
+      TargetType: instance
+      Port: 80
+      Protocol: TCP
+      TargetGroupAttributes:
+      - Key: deregistration_delay.timeout_seconds
+        Value: "20"
+  AppProtectIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-AppProtectIAMRole'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-AutoScalingGroupPolicy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - ec2:DescribeInstances
+                  - autoscaling:DescribeAutoScalingGroups
+                  - ec2:DescribeTags
+                  - ec2:DescribeVolumes
+                Effect: Allow
+                Resource: "*"
+              - Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ""
+                    - - "arn:aws:s3:::"
+                      - !Ref "AppProtectArtifacts"
+                  - !Join
+                    - ""
+                    - - "arn:aws:s3:::"
+                      - !Ref "AppProtectArtifacts"
+                      - /*
+        - PolicyName: !Sub '${AWS::StackName}-CloudWatchPolicy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - "logs:PutLogEvents"
+                  - "logs:DescribeLogStreams"
+                  - "logs:DescribeLogGroups"
+                  - "logs:CreateLogStream"
+                  - "logs:CreateLogGroup"
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - logs
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - log-group
+                      - !Ref "AppProtectLogGroup"
+                      - "*"
+              - Action:
+                  - "cloudwatch:PutMetricData"
+                Effect: Allow
+                # TODO: check correct resource
+                Resource: "*"
+  AppProtectInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref "AppProtectIAMRole"
+  AppProtectScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AppProtectASG
+      Cooldown: "600"
+      ScalingAdjustment: 2
+  AppProtectScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AppProtectASG
+      Cooldown: "600"
+      ScalingAdjustment: -1
+  AppProtectAsgCpuAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-AsgCpuAlarmHigh'
+      AlarmDescription: "Scale-up if CPU > 90% for 10 minutes"
+      MetricName: CPUUtilization
+      Namespace: "AWS/EC2"
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 90
+      AlarmActions: 
+        - !Ref AppProtectScaleUpPolicy
+      Dimensions:
+        - Name: "AutoScalingGroupName"
+          Value: !Ref AppProtectASG
+      ComparisonOperator: GreaterThanThreshold
+  AppProtectAsgCpuAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-AsgCpuAlarmLow'
+      AlarmDescription: "Scale-down if CPU < 70% for 10 minutes"
+      EvaluationPeriods: 2
+      Metrics:
+        - Id: exp1
+          ReturnData: true
+          Expression: "IF(tot1 > min1 AND cpu1 < 70, 1, 0)"
+        - Id: min1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: GroupDesiredCapacity
+              Namespace: "AWS/AutoScaling"
+              Dimensions:
+                - Name: "AutoScalingGroupName"
+                  Value: !Ref AppProtectASG
+            Stat: Minimum
+            Period: 300     
+        - Id: tot1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: GroupTotalInstances
+              Namespace: "AWS/AutoScaling"
+              Dimensions:
+                - Name: "AutoScalingGroupName"
+                  Value: !Ref AppProtectASG
+            Stat: Minimum
+            Period: 300      
+        - Id: cpu1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: CPUUtilization
+              Namespace: "AWS/EC2"
+              Dimensions:
+                - Name: "AutoScalingGroupName"
+                  Value: !Ref AppProtectASG
+            Stat: Average
+            Period: 300
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions: 
+        - !Ref AppProtectScaleDownPolicy
+  AppProtectRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Sub '${AWS::StackName}-AppProtectRepo'
+      RepositoryDescription: This is a repository for Nginx App Protect configuration.
+      Code:
+        BranchName: master
+        S3:
+          Bucket: nginx-plus-app-protect-cf
+          Key: codecommit-base-v1.zip
+  AppProtectCodeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${AWS::StackName}-AppProtectCodeBuild'
+      Description: Build nginx config
+      ServiceRole: !GetAtt AppProtectCodeBbuildRole.Arn
+      Artifacts:
+        Location: !Ref "AppProtectArtifacts"
+        Name: "nginx-config.zip"
+        NamespaceType: BUILD_ID
+        Packaging: ZIP
+        Path: "codebuild"
+        Type: S3
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+      Source:
+        Location: !GetAtt AppProtectRepo.CloneUrlHttp
+        Type: CODECOMMIT
+      LogsConfig:
+        # TODO: Add cloudwatch or S3 logs
+        CloudWatchLogs:
+          Status: DISABLED
+      TimeoutInMinutes: 10
+  AppProtectCodeBbuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CodeBbuildRole'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+        Version: "2012-10-17"
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-CodeBuildPolicy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - s3:List*
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ""
+                    - - "arn:aws:s3:::"
+                      - !Ref "AppProtectArtifacts"
+                  - !Join
+                    - ""
+                    - - "arn:aws:s3:::"
+                      - !Ref "AppProtectArtifacts"
+                      - /*
+  AppProtectCodeDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CodeDeployRole'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-CodeDeployPolicy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - autoscaling:CompleteLifecycleAction
+                  - autoscaling:DeleteLifecycleHook
+                  - autoscaling:PutLifecycleHook
+                  - autoscaling:RecordLifecycleActionHeartbeat
+                Effect: Allow
+                Resource: !Join
+                  - ":"
+                  - - arn
+                    - aws
+                    - autoscaling
+                    - !Ref "AWS::Region"
+                    - !Ref "AWS::AccountId"
+                    - autoScalingGroup
+                    - "*"
+                    # TODO: now working on stack create
+                    # - !Join
+                    #   - '/'
+                    #   - - autoScalingGroupName
+                    #     - !Ref 'AppProtectASG'
+              - Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:DescribeLifecycleHooks
+                  # TODO: check resource permissions
+                  - elasticloadbalancing:RegisterTargets
+                  - elasticloadbalancing:DeregisterTargets
+                  - elasticloadbalancing:Describe*
+                Effect: Allow
+                Resource: "*"
+  AppProtectPipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-PipelineRole'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-PipelinePolicy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - codecommit
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - !GetAtt AppProtectRepo.Name
+              - Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StopBuild
+                Effect: Allow
+                Resource:
+                  - !GetAtt "AppProtectCodeBuild.Arn"
+              - Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplicationRevision
+                  - codedeploy:GetDeployment
+                  - codedeploy:GetDeploymentConfig
+                  - codedeploy:RegisterApplicationRevision
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - deploymentgroup
+                      - !Join
+                        - "/"
+                        - - !Ref "AppProtectCodeDeployApp"
+                          - !Ref "AppProtectDeploymentGroup"
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - application
+                      - !Ref "AppProtectCodeDeployApp"
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - codedeploy
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - deploymentconfig
+                      - "*"
+              - Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:s3:::${AppProtectArtifacts}'
+                  - !Sub 'arn:aws:s3:::${AppProtectArtifacts}/*'
+  AppProtectArtifacts:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-app-protect-artifacts'
+      VersioningConfiguration:
+        Status: Enabled                      
+  CleanupBucketRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CleanupBucketRole'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-CleanupBucketPolicy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:s3:::${AppProtectArtifacts}'
+                  - !Sub 'arn:aws:s3:::${AppProtectArtifacts}/*'
+  CleanupBucketOnDeleteFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code: 
+        ZipFile: |
+          import json, boto3, logging
+          import cfnresponse
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              logger.info("event: {}".format(event))
+              try:
+                  bucket = event['ResourceProperties']['BucketName']
+                  logger.info("bucket: {}, event['RequestType']: {}".format(bucket,event['RequestType']))
+                  if event['RequestType'] == 'Delete':
+                      s3 = boto3.resource('s3')
+                      bucket = s3.Bucket(bucket)
+                      for obj in bucket.objects.filter():
+                          logger.info("delete obj: {}".format(obj))
+                          s3.Object(bucket.name, obj.key).delete()
+                      bucket.object_versions.all().delete()
+                  sendResponseCfn(event, context, cfnresponse.SUCCESS)
+              except Exception as e:
+                  logger.info("Exception: {}".format(e))
+                  sendResponseCfn(event, context, cfnresponse.FAILED)
+
+          def sendResponseCfn(event, context, responseStatus):
+              responseData = {}
+              responseData['Data'] = {}
+              cfnresponse.send(event, context, responseStatus, responseData, "CustomResourcePhysicalID")              
+
+      Handler: "index.lambda_handler"
+      Runtime: python3.7
+      MemorySize: 128
+      Timeout: 60
+      Role: !GetAtt CleanupBucketRole.Arn     
+  CleanupBucketOnDelete:
+    Type: Custom::cleanupbucket
+    Properties:
+      ServiceToken: !GetAtt CleanupBucketOnDeleteFunction.Arn
+      BucketName: !Ref AppProtectArtifacts      
+  AppProtectCodeDeployApp:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub '${AWS::StackName}-AppProtectApp'      
+      ComputePlatform: Server
+  AppProtectDeploymentConfig:
+    Type: AWS::CodeDeploy::DeploymentConfig
+    Properties:
+      DeploymentConfigName: !Sub '${AWS::StackName}-AppProtectConfig'
+      MinimumHealthyHosts:
+        Type: FLEET_PERCENT
+        Value: 50
+  AppProtectDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      DeploymentConfigName: !Ref AppProtectDeploymentConfig
+      ApplicationName: !Ref AppProtectCodeDeployApp
+      DeploymentGroupName: !Sub '${AWS::StackName}-AppProtect'    
+      LoadBalancerInfo:
+        TargetGroupInfoList:
+          - Name: !GetAtt AppProtectTargetGroup.TargetGroupName
+      DeploymentStyle:
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      ServiceRoleArn: !GetAtt AppProtectCodeDeployRole.Arn
+      AutoScalingGroups:
+        - !Ref AppProtectASG
+  AppProtectPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn:
+      - "AppProtectLB"
+    Properties:
+      Name: !Sub '${AWS::StackName}-AppProtectPipeline'
+      RoleArn: !GetAtt AppProtectPipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: "1"
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !GetAtt AppProtectRepo.Name
+                BranchName: master
+                PollForSourceChanges: true
+              InputArtifacts: []
+              OutputArtifacts:
+                - Name: !Sub '${AWS::StackName}-SourceArtifact'
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref AppProtectCodeBuild
+              InputArtifacts:
+                - Name: !Sub '${AWS::StackName}-SourceArtifact'
+              OutputArtifacts:
+                - Name: !Sub '${AWS::StackName}-BuildArtifact'
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: DeployAction
+              InputArtifacts:
+                - Name: !Sub '${AWS::StackName}-BuildArtifact'
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: "1"
+                Provider: CodeDeploy
+              Configuration:
+                ApplicationName: !Ref AppProtectCodeDeployApp
+                DeploymentGroupName: !Ref AppProtectDeploymentGroup
+              RunOrder: 1
+      ArtifactStore:
+        Type: S3
+        Location: !Ref AppProtectArtifacts
+  AppProtectDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${AWS::StackName}-AppProtectDashboard'
+      DashboardBody: !Sub '{"widgets":[{"height":6,"width":15,"y":0,"x":3,"type":"log","properties":{"query":"SOURCE \"${AppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"request_status=\\\"alerted\\\"\" as alerted_requests\n| parse @message \"request_status=\\\"blocked\\\"\" as blocked_requests\n| parse @message \"request_status=\\\"passed\\\"\" as passed_requests\n| sort @timestamp desc\n| stats count(alerted_requests) as alerted, count(blocked_requests) as blocked, count(passed_requests) as passed by bin(5m)","region":"${AWS::Region}","stacked":true,"view":"timeSeries","title":"AppProtect Requests"}},{"height":6,"width":6,"y":0,"x":18,"type":"log","properties":{"query":"SOURCE \"${AppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message /request_status=\"(?<request_status>.*?)\"/\n| sort @timestamp desc\n| stats count(*) as requests by request_status","region":"${AWS::Region}","stacked":false,"view":"pie","title":"Total Requests"}},{"height":6,"width":6,"y":6,"x":0,"type":"metric","properties":{"view":"timeSeries","stacked":true,"metrics":[["AWS/EC2","CPUUtilization","AutoScalingGroupName","${AppProtectASG}"]],"region":"${AWS::Region}"}},{"height":6,"width":6,"y":6,"x":6,"type":"metric","properties":{"view":"timeSeries","stacked":true,"metrics":[["AWS/EC2","NetworkIn","AutoScalingGroupName","${AppProtectASG}"],[".","NetworkOut",".","."]],"region":"${AWS::Region}"}},{"height":12,"width":24,"y":12,"x":0,"type":"log","properties":{"query":"SOURCE \"${AppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /attack_type=\\\"(?<attack_type>.*?)\\\",(?<part1>.*?),ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",(?<part3>.*?),sub_violations=\\\"(?<sub_violations>.*?)\\\",support_id=\\\"(?<support_id>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| display @timestamp, request_status, attack_type, ip_client, sub_violations, support_id\n| sort @timestamp desc\n| limit 20","region":"${AWS::Region}","stacked":false,"view":"table","title":"Alerts Log"}},{"height":3,"width":3,"y":0,"x":0,"type":"metric","properties":{"view":"singleValue","metrics":[["AWS/AutoScaling","GroupTotalInstances","AutoScalingGroupName","${AppProtectASG}"]],"region":"${AWS::Region}","title":"Total Instances"}},{"height":3,"width":3,"y":3,"x":0,"type":"metric","properties":{"view":"singleValue","metrics":[["AWS/NetworkELB","HealthyHostCount","TargetGroup","${AppProtectTargetGroup.TargetGroupFullName}","LoadBalancer","${AppProtectLB.LoadBalancerFullName}"]],"region":"${AWS::Region}","title":"Healthy Instances"}},{"type":"log","x":12,"y":6,"width":6,"height":6,"properties":{"query":"SOURCE \"${AppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"response_code=\\\"*\\\"\" as response_code\n| filter response_code > 0\n| stats count(response_code) as code by response_code","region":"${AWS::Region}","stacked":false,"title":"Response Codes","view":"bar"}},{"type":"log","x":18,"y":6,"width":6,"height":6,"properties":{"query":"SOURCE \"${AppProtectLogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| stats count(ip_client) as count by ip_client as ip\n| sort count desc\n| limit 10","region":"${AWS::Region}","stacked":false,"title":"Top Attackers","view":"table"}}]}'
+Outputs:
+  AppProtectLBDNSName:
+    Description: "The DNSName of the Load balancer"
+    Value: !GetAtt AppProtectLB.DNSName
+  AppProtectRepoHttp:
+    Description: "The URL to use for cloning the repository over HTTPS"
+    Value: !GetAtt AppProtectRepo.CloneUrlHttp
+  AppProtectRepoSsh:
+    Description: "The URL to use for cloning the repository over SSH"
+    Value: !GetAtt AppProtectRepo.CloneUrlSsh
