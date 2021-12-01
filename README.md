@@ -46,13 +46,13 @@ Deployment process is standard as for any other CloudFormation template. The dep
 
 Or click the button below:
 
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/new?stackName=NAP&templateURL=https://nginx-plus-app-protect-cf.s3.amazonaws.com/release/latest/modules/quickstart/nap-autoscale-ubuntu-dev.yaml)
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/new?stackName=NAP&templateURL=https://aws-waf-solution-template.s3.amazonaws.com/release/latest/modules/quickstart/nap-autoscale-ubuntu-dev.yaml)
 
 Or use following command to create a stack using aws cli:
 ```
 $ aws cloudformation create-stack --stack-name NAME_OF_YOUR STACK \
     --capabilities CAPABILITY_NAMED_IAM \
-    --template-body https://nginx-plus-app-protect-cf.s3.amazonaws.com/release/latest/modules/quickstart/nap-autoscale-ubuntu-dev.yaml \
+    --template-body https://aws-waf-solution-template.s3.amazonaws.com/release/latest/modules/quickstart/nap-autoscale-ubuntu-dev.yaml \
     --parameters ParameterKey=sshKey,ParameterValue=YourSshKey
 ```
 
