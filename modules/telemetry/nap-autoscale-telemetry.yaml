@@ -1,0 +1,295 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  The template is intended to configure CloudWatch
+  logs and create a Dashboard for NAP ASG configuration.
+  **WARNING** This template creates AWS resources. 
+  You will be billed for the AWS resources used
+  if you create a stack from this template. QS(0027)
+Conditions:
+  useDefaultLogGroupName: !Equals
+    - ''
+    - !Ref logGroupName
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Logs Configuration
+        Parameters:
+          - logGroupName
+          - logRetentionInDays
+      - Label:
+          default: ASG Configuration
+        Parameters:
+          - instanceIAMRole
+          - autoScalingGroup
+          - loadBalancerFullName
+          - targetGroupFullName
+      - Label:
+          default: Resource Tags
+        Parameters:
+          - uniqueString
+    ParameterLabels:
+      instanceIAMRole:
+        default: IAM Role
+      autoScalingGroup:
+        default: Name
+      loadBalancerFullName:
+        default: LB FullName
+      targetGroupFullName:
+        default: LB TargetGroup FullName
+      logGroupName:
+        default: LogGroup Name
+      logRetentionInDays:
+        default: Log Retention
+      uniqueString:
+        default: Unique String
+  Version: 1.0.0  
+Outputs:
+  stackName:
+    Description: Telemetry nested stack name
+    Value: !Ref AWS::StackName
+  dashboardName:
+    Description: Dashboard name
+    Value: !Ref NapDashboard
+  logGroupName:
+    Description: Log Group name
+    Value: !Ref LogGroup
+Parameters:
+  instanceIAMRole:
+    Default: ''
+    Description: Auto Scale IAM Role
+    Type: String 
+  targetGroupFullName:
+    Default: ''
+    Description: Auto Scaling Target Group Full name
+    Type: String
+  loadBalancerFullName:
+    Default: ''
+    Description: Load Balancer Full name
+    Type: String
+  autoScalingGroup:
+    Default: ''
+    Description: Auto Scaling Group name
+    Type: String
+  logGroupName:
+    Default: ''
+    Description: CloudWatch Log Group name
+    Type: String 
+  logRetentionInDays:
+    Default: 7
+    Description: Log Retention In Days
+    Type: Number
+  uniqueString:
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9]{1,11}$
+    ConstraintDescription: Must Contain between 1 and 12 alphanumeric characters with first character as a letter.
+    Default: myUniqStr
+    Description: Unique String used when creating object names or Tags.
+    Type: String
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !If 
+        - useDefaultLogGroupName
+        - !Sub '${uniqueString}-log-group'
+        - !Ref logGroupName
+      RetentionInDays: !Ref logRetentionInDays
+  NapDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${uniqueString}-dashboard'
+      DashboardBody: !Sub >
+        {
+          "widgets": [
+            {
+              "height": 6,
+              "width": 15,
+              "y": 0,
+              "x": 3,
+              "type": "log",
+              "properties": {
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"request_status=\\\"alerted\\\"\" as alerted_requests\n| parse @message \"request_status=\\\"blocked\\\"\" as blocked_requests\n| parse @message \"request_status=\\\"passed\\\"\" as passed_requests\n| sort @timestamp desc\n| stats count(alerted_requests) as alerted, count(blocked_requests) as blocked, count(passed_requests) as passed by bin(5m)",
+                "region": "${AWS::Region}",
+                "stacked": true,
+                "view": "timeSeries",
+                "title": "NAP Requests"
+              }
+            },
+            {
+              "height": 6,
+              "width": 6,
+              "y": 0,
+              "x": 18,
+              "type": "log",
+              "properties": {
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message /request_status=\"(?<request_status>.*?)\"/\n| sort @timestamp desc\n| stats count(*) as requests by request_status",
+                "region": "${AWS::Region}",
+                "stacked": false,
+                "view": "pie",
+                "title": "Total Requests"
+              }
+            },
+            {
+              "height": 6,
+              "width": 6,
+              "y": 6,
+              "x": 0,
+              "type": "metric",
+              "properties": {
+                "view": "timeSeries",
+                "stacked": true,
+                "metrics": [
+                  [
+                    "AWS/EC2",
+                    "CPUUtilization",
+                    "AutoScalingGroupName",
+                    "${autoScalingGroup}"
+                  ]
+                ],
+                "region": "${AWS::Region}"
+              }
+            },
+            {
+              "height": 6,
+              "width": 6,
+              "y": 6,
+              "x": 6,
+              "type": "metric",
+              "properties": {
+                "view": "timeSeries",
+                "stacked": true,
+                "metrics": [
+                  [
+                    "AWS/EC2",
+                    "NetworkIn",
+                    "AutoScalingGroupName",
+                    "${autoScalingGroup}"
+                  ],
+                  [
+                    ".",
+                    "NetworkOut",
+                    ".",
+                    "."
+                  ]
+                ],
+                "region": "${AWS::Region}"
+              }
+            },
+            {
+              "height": 12,
+              "width": 24,
+              "y": 12,
+              "x": 0,
+              "type": "log",
+              "properties": {
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /attack_type=\\\"(?<attack_type>.*?)\\\",(?<part1>.*?),ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",(?<part3>.*?),sub_violations=\\\"(?<sub_violations>.*?)\\\",support_id=\\\"(?<support_id>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| display @timestamp, request_status, attack_type, ip_client, sub_violations, support_id\n| sort @timestamp desc\n| limit 20",
+                "region": "${AWS::Region}",
+                "stacked": false,
+                "view": "table",
+                "title": "Alerts Log"
+              }
+            },
+            {
+              "height": 3,
+              "width": 3,
+              "y": 0,
+              "x": 0,
+              "type": "metric",
+              "properties": {
+                "view": "singleValue",
+                "metrics": [
+                  [
+                    "AWS/AutoScaling",
+                    "GroupTotalInstances",
+                    "AutoScalingGroupName",
+                    "${autoScalingGroup}"
+                  ]
+                ],
+                "region": "${AWS::Region}",
+                "title": "Total Instances"
+              }
+            },
+            {
+              "height": 3,
+              "width": 3,
+              "y": 3,
+              "x": 0,
+              "type": "metric",
+              "properties": {
+                "view": "singleValue",
+                "metrics": [
+                  [
+                    "AWS/NetworkELB",
+                    "HealthyHostCount",
+                    "TargetGroup",
+                    "${targetGroupFullName}",
+                    "LoadBalancer",
+                    "${loadBalancerFullName}"
+                  ]
+                ],
+                "region": "${AWS::Region}",
+                "title": "Healthy Instances"
+              }
+            },
+            {
+              "type": "log",
+              "x": 12,
+              "y": 6,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/\n| parse @message \"response_code=\\\"*\\\"\" as response_code\n| filter response_code > 0\n| stats count(response_code) as code by response_code",
+                "region": "${AWS::Region}",
+                "stacked": false,
+                "title": "Response Codes",
+                "view": "bar"
+              }
+            },
+            {
+              "type": "log",
+              "x": 18,
+              "y": 6,
+              "width": 6,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE \"${LogGroup}\" | fields @timestamp, @message\n| filter @logStream like /security.log$/ \n| parse @message /ip_client=\\\"(?<ip_client>.*?)\\\",(?<part2>.*?),request_status=\\\"(?<request_status>.*?)\\\",/ \n| filter request_status in [\"blocked\", \"alerted\"]\n| stats count(ip_client) as count by ip_client as ip\n| sort count desc\n| limit 10",
+                "region": "${AWS::Region}",
+                "stacked": false,
+                "title": "Top Attackers",
+                "view": "table"
+              }
+            }
+          ]
+        }
+  LogsPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      Roles:
+        - !Ref instanceIAMRole
+      PolicyName: !Sub '${uniqueString}-logs-policy'
+      PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - "logs:PutLogEvents"
+                  - "logs:DescribeLogStreams"
+                  - "logs:DescribeLogGroups"
+                  - "logs:CreateLogStream"
+                  - "logs:CreateLogGroup"
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ":"
+                    - - arn
+                      - aws
+                      - logs
+                      - !Ref "AWS::Region"
+                      - !Ref "AWS::AccountId"
+                      - log-group
+                      - !Ref LogGroup
+                      - "*"
+              - Action:
+                  - "cloudwatch:PutMetricData"
+                Effect: Allow
+                # TODO: check correct resource
+                Resource: "*"

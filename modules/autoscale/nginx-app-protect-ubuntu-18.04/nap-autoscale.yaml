@@ -1,0 +1,493 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Autoscale Template is intended to deploy Autoscale Group
+  of NAP Ubuntu 18.04 instances.
+  **WARNING** This template creates AWS resources. 
+  You will be billed for the AWS resources used
+  if you create a stack from this template. QS(0027)
+Conditions:
+  externalTargetGroupHttpProvided: !Not
+    - !Equals
+      - ''
+      - !Ref externalTargetGroupHttp
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Instance Configuration
+        Parameters:
+          - imageId
+          - instanceType
+          - sshKey
+          - provisionPublicIp
+          - scalingMaxSize
+          - scalingMinSize
+          - logGroupName
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - subnets
+          - napExternalSecurityGroup
+          - externalTargetGroupHttp
+      - Label:
+          default: Resource Tags
+        Parameters:
+          - cost
+          - environment
+          - group
+          - owner
+          - uniqueString
+    ParameterLabels:
+      imageId:
+        default: AMI ID
+      instanceType:
+        default: EC2 Type
+      sshKey:
+        default: SSH Key
+      provisionPublicIp:
+        default: Provision Public IPs
+      scalingMaxSize:
+        default: Minimum number of instances
+      scalingMinSize:
+        default: Maximum number of instances
+      subnets:
+        default: Public subnets
+      napExternalSecurityGroup:
+        default: Public Security Group
+      externalTargetGroupHttp:
+        default: External LB Targert Group
+      logGroupName:
+        default: LogGroup Name
+      cost:
+        default: Cost
+      environment:
+        default: Environment
+      group:
+        default: Group
+      owner:
+        default: Owner
+      uniqueString:
+        default: Unique String
+  Version: 1.0.0
+Outputs:
+  stackName:
+    Description: nap-autoscale nested stack name
+    Value: !Ref "AWS::StackName"
+  autoScalingGroup:
+    Description: Auto Scale Group
+    Value: !Ref NapASG
+  napInstanceProfile:
+    Description: NAP Instance Profile
+    Value: !Ref NapInstanceProfile
+  napIAMRole:
+    Description: NAP IAM Role
+    Value: !Ref NapIAMRole
+Parameters:
+  externalTargetGroupHttp:
+    Default: ''
+    Description: External Load Balancer Targert Group with for HTTP requests.
+    Type: String
+  imageId:
+    Description: REQUIRED - Provide AMI ID you wish to deploy.
+    Type: AWS::EC2::Image::Id
+  instanceType:
+    ConstraintDescription: Must be a valid EC2 instance type for Nginx App Protect
+    Default: t3.small
+    Description: Enter valid instance type.
+    Type: String
+  provisionPublicIp:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+    Description: Whether or not to provision Public IP Addresses for the Network
+      Interfaces. By Default no Public IP addresses are provisioned.
+    Type: String
+  scalingMaxSize:
+    ConstraintDescription: Must be a number between 2-100
+    Default: 2
+    Description: Maximum number of instances (2-100) that can be created in
+      the Auto Scale Group.
+    MaxValue: 100
+    MinValue: 2
+    Type: Number
+  scalingMinSize:
+    ConstraintDescription: Must be a number between 1-99
+    Default: 1
+    Description: Minimum number of instances (1-99) you want available in the
+      Auto Scale Group.
+    MaxValue: 99
+    MinValue: 1
+    Type: Number    
+  sshKey:
+    Description: REQUIRED - Supply the public key that will be used for SSH authentication
+      to the virtual machines.
+    Type: AWS::EC2::KeyPair::KeyName
+  subnets:
+    ConstraintDescription: The subnet IDs must be within an existing VPC
+    Description: REQUIRED - Public or external subnets for the availability zones.
+    Type: List<AWS::EC2::Subnet::Id>
+  napExternalSecurityGroup:
+    Description: REQUIRED - NAP external security group.
+    Type: String
+  logGroupName:
+    Default: ''
+    Description: CloudWatch Log Group
+    Type: String 
+  cost:
+    Default: f5cost
+    Description: Cost Center Tag.
+    Type: String
+  environment:
+    Default: f5env
+    Description: Environment Tag.
+    Type: String
+  group:
+    Default: f5group
+    Description: Group Tag.
+    Type: String
+  owner:
+    Default: f5owner
+    Description: Owner Tag.
+    Type: String    
+  uniqueString:
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9]{1,11}$'
+    ConstraintDescription: Must Contain between 1 and 12 alphanumeric characters with
+      first character as a letter.
+    Default: myUniqStr
+    Description: Unique String used when creating object names or Tags.
+    Type: String
+Resources:
+  NapASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref 'scalingMinSize'
+        Timeout: PT30M
+    Properties:
+      AutoScalingGroupName: !Sub '${uniqueString}-asg'
+      Cooldown: '1500'
+      HealthCheckGracePeriod: 1500
+      HealthCheckType: EC2
+      LaunchConfigurationName: !Ref NapLaunchConfig
+      TargetGroupARNs:
+        - !If
+          - externalTargetGroupHttpProvided
+          - !Ref 'externalTargetGroupHttp'
+          - !Ref 'AWS::NoValue'
+      MaxSize: !Ref 'scalingMaxSize'
+      MetricsCollection:
+        - Granularity: 1Minute
+          Metrics:
+            - GroupMinSize
+            - GroupMaxSize
+            - GroupDesiredCapacity
+            - GroupInServiceInstances
+            - GroupTotalInstances
+      MinSize: !Ref 'scalingMinSize'
+      Tags:
+        - Key: costcenter
+          PropagateAtLaunch: true
+          Value: !Ref cost
+        - Key: environment
+          PropagateAtLaunch: true
+          Value: !Ref environment
+        - Key: group
+          PropagateAtLaunch: true
+          Value: !Ref group
+        - Key: Name
+          PropagateAtLaunch: true
+          Value:  !Sub '${uniqueString}-asg'
+        - Key: owner
+          PropagateAtLaunch: true
+          Value: !Ref owner
+      VPCZoneIdentifier: !Ref subnets
+  NapLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - 01_setupCfnHup
+            - 02_config-amazon-cloudwatch-agent
+            - 03_restart_amazon-cloudwatch-agent
+          UpdateEnvironment:
+            - 02_config-amazon-cloudwatch-agent
+            - 03_restart_amazon-cloudwatch-agent
+        02_config-amazon-cloudwatch-agent:
+          files:
+            ? "/opt/aws/amazon-cloudwatch-agent/bin/nginx-cloudwatch-agent-config.json"
+            : mode: "000400"
+              owner: root
+              group: root
+              content: !Sub |
+                {
+                  "metrics": {
+                    "append_dimensions": {
+                      "AutoScalingGroupName": "${!aws:AutoScalingGroupName}",
+                      "ImageId": "${!aws:ImageId}",
+                      "InstanceId": "${!aws:InstanceId}",
+                      "InstanceType": "${!aws:InstanceType}"
+                    },
+                    "metrics_collected": {
+                      "mem": {
+                        "measurement": [
+                          "mem_used_percent"
+                        ]
+                      },
+                      "swap": {
+                        "measurement": [
+                          "swap_used_percent"
+                        ]
+                      },
+                      "disk": {
+                        "measurement": [
+                          "disk_used_percent"
+                        ]
+                      },
+                      "net": {
+                        "measurement": [
+                          "net_bytes_recv",
+                          "net_bytes_sent"
+                        ]
+                      }
+                    }
+                  },
+                  "logs": {
+                    "logs_collected": {
+                      "files": {
+                        "collect_list": [
+                          {
+                            "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
+                            "log_group_name": "${logGroupName}",
+                            "log_stream_name": "{instance_id}/amazon-cloudwatch-agent.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/nginx/access.log",
+                            "log_group_name": "${logGroupName}",
+                            "log_stream_name": "{instance_id}/nginx_access.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/nginx/error.log",
+                            "log_group_name": "${logGroupName}",
+                            "log_stream_name": "{instance_id}/nginx_error.log",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/syslog",
+                            "log_group_name": "${logGroupName}",
+                            "log_stream_name": "{instance_id}/syslog",
+                            "timezone": "Local"
+                          },
+                          {
+                            "file_path": "/var/log/app_protect/security.log",
+                            "log_group_name": "${logGroupName}",
+                            "log_stream_name": "{instance_id}/security.log",
+                            "timezone": "Local"
+                          }
+                        ]
+                      }
+                    },
+                    "log_stream_name": "${logGroupName}",
+                    "force_flush_interval" : 15
+                  }
+                }
+        03_restart_amazon-cloudwatch-agent:
+          commands:
+            01_stop_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop
+            02_start_service:
+              command: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/nginx-cloudwatch-agent-config.json -s
+        01_setupCfnHup:
+          files:
+            "/etc/cfn/cfn-hup.conf":
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+              mode: "000400"
+              owner: root
+              group: root
+            "/etc/cfn/hooks.d/amazon-cloudwatch-agent-auto-reloader.conf":
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.NapLaunchConfig.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource NapLaunchConfig --region ${AWS::Region} --configsets UpdateEnvironment
+                runas=root
+              mode: "000400"
+              owner: root
+              group: root
+            "/lib/systemd/system/cfn-hup.service":
+              content: |
+                [Unit]
+                Description=cfn-hup daemon
+                [Service]
+                Type=simple
+                ExecStart=/opt/aws/bin/cfn-hup
+                Restart=always
+                [Install]
+                WantedBy=multi-user.target
+          commands:
+            01enable_cfn_hup:
+              command: |
+                systemctl enable cfn-hup.service
+            02start_cfn_hup:
+              command: |
+                systemctl start cfn-hup.service
+    Properties: 
+      AssociatePublicIpAddress: !Ref provisionPublicIp
+      ImageId: !Ref imageId
+      InstanceMonitoring: false
+      InstanceType: !Ref instanceType
+      KeyName: !Ref sshKey
+      IamInstanceProfile: !Ref NapInstanceProfile
+      SecurityGroups:
+        - !Ref napExternalSecurityGroup
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash
+          sudo apt-get update -y
+          # Install cloudformation agent
+          apt-get install -y python-pip
+          apt-get install -y python-setuptools
+          mkdir -p /opt/aws/bin
+          python /usr/lib/python2.7/dist-packages/easy_install.py --script-dir /opt/aws/bin https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+
+          # Install cloudwatch agent
+          wget https://s3.amazonaws.com/amazoncloudwatch-agent/debian/amd64/latest/amazon-cloudwatch-agent.deb
+          sudo dpkg -i -E ./amazon-cloudwatch-agent.deb
+
+          # Start cfn-init
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource NapLaunchConfig --configsets default --region ${AWS::Region}
+
+          # Install CodeDeploy Agent
+          sudo apt install ruby -y
+          wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install
+          chmod +x ./install
+          sudo ./install auto
+
+          # All done so signal success
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NapASG --region ${AWS::Region}
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref NapASG
+      Cooldown: '600'
+      ScalingAdjustment: 2
+  ScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref NapASG
+      Cooldown: '600'
+      ScalingAdjustment: -1
+  AsgCpuAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-AsgCpuAlarmHigh'
+      AlarmDescription: 'Scale-up if CPU > 90% for 10 minutes'
+      MetricName: CPUUtilization
+      Namespace: 'AWS/EC2'
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 90
+      AlarmActions: 
+        - !Ref ScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref NapASG
+      ComparisonOperator: GreaterThanThreshold
+  AsgCpuAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-AsgCpuAlarmLow'
+      AlarmDescription: 'Scale-down if CPU < 70% for 10 minutes'
+      EvaluationPeriods: 2
+      Metrics:
+        - Id: exp1
+          ReturnData: true
+          Expression: 'IF(tot1 > min1 AND cpu1 < 70, 1, 0)'
+        - Id: min1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: GroupDesiredCapacity
+              Namespace: 'AWS/AutoScaling'
+              Dimensions:
+                - Name: AutoScalingGroupName
+                  Value: !Ref NapASG
+            Stat: Minimum
+            Period: 300     
+        - Id: tot1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: GroupTotalInstances
+              Namespace: 'AWS/AutoScaling'
+              Dimensions:
+                - Name: AutoScalingGroupName
+                  Value: !Ref NapASG
+            Stat: Minimum
+            Period: 300      
+        - Id: cpu1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              MetricName: CPUUtilization
+              Namespace: 'AWS/EC2'
+              Dimensions:
+                - Name: AutoScalingGroupName
+                  Value: !Ref NapASG
+            Stat: Average
+            Period: 300
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions: 
+        - !Ref ScaleDownPolicy
+  NapIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub '${uniqueString}-ec2-policy'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - ec2:DescribeInstances
+                  - autoscaling:DescribeAutoScalingGroups
+                  - ec2:DescribeTags
+                  - ec2:DescribeVolumes
+                Effect: Allow
+                Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Sub '${uniqueString}-ec2-access-role'
+        - Key: costcenter
+          Value: !Ref cost
+        - Key: environment
+          Value: !Ref environment
+        - Key: group
+          Value: !Ref group
+        - Key: owner
+          Value: !Ref owner
+  NapInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref NapIAMRole
