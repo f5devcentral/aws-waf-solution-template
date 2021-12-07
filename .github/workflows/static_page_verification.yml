@@ -5,7 +5,7 @@ on:
   pull_request: {branches: dev} 
   
 jobs:
-  cft-basic_page_chk:
+  cft-static-page-chk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
