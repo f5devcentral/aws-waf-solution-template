@@ -1,6 +1,5 @@
 name: Upload Dev Artifacts To AWS S3
-on: [pull_request]
-#[push]
+on: [push]
 
 jobs:
   upload-dev-artifacts-to-aws-s3:
