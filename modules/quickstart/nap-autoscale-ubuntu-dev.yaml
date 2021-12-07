@@ -249,6 +249,7 @@ Resources:
         autoScalingGroupList: !Join
           - ','
           - - !GetAtt NAPAutoScale.Outputs.autoScalingGroup
+        uniqueString: !Ref uniqueString
   Telemetry:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -259,6 +260,7 @@ Resources:
         autoScalingGroup: !GetAtt NAPAutoScale.Outputs.autoScalingGroup
         loadBalancerFullName: !GetAtt Dag.Outputs.externalElasticLoadBalancerFullName
         targetGroupFullName: !GetAtt Dag.Outputs.externalTargetGroupHttpFullName
+        uniqueString: !Ref uniqueString
   Dag:
     Type: AWS::CloudFormation::Stack
     Properties:
