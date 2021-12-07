@@ -1,0 +1,17 @@
+name: Run cfn-lint
+
+on: [pull_request]  
+#[push, pull_request]
+  
+jobs:
+  cfn-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install cfn-lint
+        run:  pip install cfn-lint
+      - name: Run linter and show version
+        run: |
+          find ./modules/ -not -path "*/initial_repo/*" -type f -name "*.yaml" -exec cfn-lint {} \;
+          cfn-lint --version
