@@ -1,0 +1,56 @@
+name: Cloud Formation Template Static Page verification
+
+on:
+  push: {branches: dev}
+  pull_request: {branches: dev} 
+  
+jobs:
+  cft-static-page-chk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+      - name: Install Dependencies
+        run: |
+          python -m pip install --user boto3
+          python -m pip install --user requests
+          pip install git-remote-codecommit
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{secrets.AWS_ACCESS_KEY_ID}}
+          aws-secret-access-key: ${{secrets.AWS_SECRET_ACCESS_KEY}}
+          aws-session-token: ${{secrets.AWS_SESSION_TOKEN}}
+          aws-region: ${{secrets.AWS_REGION}}
+      - name: Create Stack with CF template
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: nap-cft-stack
+          template: "/home/runner/work/aws-waf-solution-template/aws-waf-solution-template/modules/quickstart/nap-autoscale-ubuntu-dev.yaml"
+          parameter-overrides: "sshKey=NAP_AWS,uniqueString=CftUnq"
+          capabilities: CAPABILITY_NAMED_IAM
+      - name: assuming that the configured files are under repo scripts folder  
+        run: sleep 5m
+        shell: bash   
+      - name: Customize the stack for static page verification
+        run: |
+          git clone codecommit::us-east-2://myUniqStr-repository local-dir
+          cd local-dir
+          cp  $PWD/scripts/appspec.yml $PWD/
+          git config --global user.email "random23@github.com"
+          git config --global user.name "GitHub Action test"
+          git add .
+          git commit -m "Configuration for static page verification"
+          git push -u origin main
+      - name: Sleep for a while untill the pipeline completes
+        run: sleep 23m
+        shell: bash     
+      - name: Verify Stack Static Page
+        run: |
+          python .github/workflows/static/verify_cft_nap.py static
+        env:
+          STACK_NAME: nap-cft-stack
+      - name: Delete the stack using AWS actions
+        run: |
+          aws cloudformation delete-stack --stack-name nap-cft-stack
+        shell: bash      
