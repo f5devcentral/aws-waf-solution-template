@@ -34,7 +34,7 @@ jobs:
         shell: bash   
       - name: Customize the stack for static page verification
         run: |
-          git clone codecommit::us-east-2://myUniqStr-repository local-dir
+          git clone codecommit::us-east-2://CftUnq-repository local-dir
           cd local-dir
           cp  $PWD/scripts/appspec.yml $PWD/
           git config --global user.email "random23@github.com"
