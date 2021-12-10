@@ -33,7 +33,7 @@ def vfy_cft_link(cft_name,exp_op):
     
 if __name__ == '__main__':
   
-  stack_name= "nap-cft-stack"
+  stack_name= os.environ['STACK_NAME']
   page_type=sys.argv[1] 
   if page_type == "static":
     page = "Hello World"
