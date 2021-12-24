@@ -1,8 +1,6 @@
 version: 0.0
 os: linux
 files:
-  - source: /files/etc/app_protect/conf/AppProtectDefaultPolicy.json
-    destination: /etc/app_protect/conf/
   - source: /files/etc/app_protect/conf/log_all.json
     destination: /etc/app_protect/conf/
   - source: /files/etc/nginx/nginx.conf
