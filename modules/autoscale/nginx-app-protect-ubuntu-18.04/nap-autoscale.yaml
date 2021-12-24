@@ -316,7 +316,7 @@ Resources:
                 [cfn-auto-reloader-hook]
                 triggers=post.update
                 path=Resources.NapLaunchConfig.Metadata.AWS::CloudFormation::Init.02_config-amazon-cloudwatch-agent
-                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource NapLaunchConfig --region ${AWS::Region} --configsets UpdateEnvironment
+                action=/usr/local/bin/cfn-init -v --stack ${AWS::StackId} --resource NapLaunchConfig --region ${AWS::Region} --configsets UpdateEnvironment
                 runas=root
               mode: "000400"
               owner: root
@@ -327,15 +327,15 @@ Resources:
                 Description=cfn-hup daemon
                 [Service]
                 Type=simple
-                ExecStart=/opt/aws/bin/cfn-hup
+                ExecStart=/usr/local/bin/cfn-hup
                 Restart=always
                 [Install]
                 WantedBy=multi-user.target
           commands:
-            01enable_cfn_hup:
+            01_enable_cfn_hup:
               command: |
                 systemctl enable cfn-hup.service
-            02start_cfn_hup:
+            02_start_cfn_hup:
               command: |
                 systemctl start cfn-hup.service
     Properties: 
@@ -352,17 +352,15 @@ Resources:
           #!/bin/bash
           sudo apt-get update -y
           # Install cloudformation agent
-          apt-get install -y python-pip
-          apt-get install -y python-setuptools
-          mkdir -p /opt/aws/bin
-          python /usr/lib/python2.7/dist-packages/easy_install.py --script-dir /opt/aws/bin https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          sudo apt-get install -y python3-pip
+          pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
 
           # Install cloudwatch agent
           wget https://s3.amazonaws.com/amazoncloudwatch-agent/debian/amd64/latest/amazon-cloudwatch-agent.deb
           sudo dpkg -i -E ./amazon-cloudwatch-agent.deb
 
           # Start cfn-init
-          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource NapLaunchConfig --configsets default --region ${AWS::Region}
+          sudo cfn-init -v --stack ${AWS::StackName} --resource NapLaunchConfig --configsets default --region ${AWS::Region}
 
           # Install CodeDeploy Agent
           sudo apt install ruby -y
@@ -371,7 +369,7 @@ Resources:
           sudo ./install auto
 
           # All done so signal success
-          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource NapASG --region ${AWS::Region}
+          sudo cfn-signal -e $? --stack ${AWS::StackName} --resource NapASG --region ${AWS::Region}
   ScaleUpPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
