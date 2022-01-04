@@ -1,0 +1,27 @@
+version: 0.0
+os: linux
+files:
+  - source: /files/etc/app_protect/conf/AppProtectDefaultPolicy.json
+    destination: /etc/app_protect/conf/
+  - source: /files/etc/app_protect/conf/log_all.json
+    destination: /etc/app_protect/conf/
+  - source: /files/etc/nginx/nginx.conf
+    destination: /etc/nginx/
+  - source: /files/etc/nginx/conf.d/
+    destination: /etc/nginx/conf.d/
+  - source: /scripts/index.html
+    destination: /usr/share/nginx/html/
+file_exists_behavior: OVERWRITE
+hooks:
+  ApplicationStop:
+    - location: scripts/stop_server
+      timeout: 300
+      runas: root
+  BeforeInstall:
+    - location: scripts/before_install
+      timeout: 300
+      runas: root
+  ApplicationStart:
+    - location: scripts/start_server 
+      timeout: 300
+      runas: root
